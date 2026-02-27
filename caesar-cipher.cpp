@@ -9,7 +9,6 @@
  * - No external dependencies
  */
 
-#include <iostream>  // Input/output stream objects
 #include <fstream>   // File stream objects
 #include <string>    // String class
 #include <vector>    // Dynamic array container
