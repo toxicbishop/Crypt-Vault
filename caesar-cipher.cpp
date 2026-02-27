@@ -235,11 +235,22 @@ namespace AES256Impl {
                 state[3][i] = gmul(a[0],11)^gmul(a[1],13)^gmul(a[2],9)^gmul(a[3],14);
             }
         }
-        file.close();
-        
-        if (totalLetters == 0) {
-            cout << "\n⚠️  No alphabetic characters found in file." << endl;
-            return;
+
+        void encryptBlock(unsigned char block[16]) {
+            unsigned char state[4][4];
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    state[j][i] = block[i*4+j];
+
+            addRoundKey(state, 0);
+            for (int round = 1; round < Nr; round++) {
+                subBytes(state); shiftRows(state); mixColumns(state); addRoundKey(state, round);
+            }
+            subBytes(state); shiftRows(state); addRoundKey(state, Nr);
+
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    block[i*4+j] = state[j][i];
         }
         
         cout << "\n📊 Letter Frequency Analysis:" << endl;
