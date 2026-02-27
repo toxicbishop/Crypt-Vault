@@ -433,33 +433,14 @@ public:
         if (!file.is_open()) { cerr << "\n❌ Error: Cannot open '" << filename << "'" << endl; return; }
         cout << "\n📄 Content of '" << filename << "':" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-        
-        string line;
-        int lineCount = 0;
-        // Read line by line with limit
-        while (getline(file, line) && lineCount < 50) {
-            cout << line << endl;
-            lineCount++;
-        }
-        
-        if (!file.eof()) {
-            cout << "\n... (truncated, showing first 50 lines) ..." << endl;
-        }
-        
+        string line; int lineCount = 0;
+        while (getline(file, line) && lineCount < 50) { cout << line << endl; lineCount++; }
+        if (!file.eof()) cout << "\n... (truncated, showing first 50 lines) ..." << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
         file.close();
     }
-    
-    // Shows file statistics (size, counts)
+
     void showFileStats(const string& filename) {
-        ifstream file(filename, ios::binary);
-        
-        if (!file.is_open()) {
-            cerr << "\n❌ Error: Cannot open file '" << filename << "'" << endl;
-            return;
-        }
-        
-        // Get file size efficiently using stat
         struct stat st;
         stat(filename.c_str(), &st);
         long fileSize = st.st_size;
