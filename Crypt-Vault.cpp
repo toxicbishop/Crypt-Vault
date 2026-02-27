@@ -495,6 +495,11 @@ class CryptVaultApp {
 private:
     AESCipher cipher;
 
+    void getLineTrim(string& s) {
+        getline(cin, s);
+        while (!s.empty() && (s.back() == '\r' || s.back() == ' ')) s.pop_back();
+    }
+
     void clearScreen() {
         #ifdef _WIN32
             system("cls");
@@ -530,7 +535,7 @@ private:
     string getPassword(const string& prompt = "Enter password: ") {
         string password;
         cout << prompt;
-        getline(cin, password);
+        getLineTrim(password);
         if (password.empty()) { cout << "❌ Password cannot be empty." << endl; return ""; }
 
         // Password strength indicator
@@ -573,7 +578,7 @@ private:
         cipher.setKey(pw);
 
         vector<string> files(numFiles);
-        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getline(cin, files[i]); }
+        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
 
         cout << "\n🔄 Processing..." << endl;
         int ok = 0;
@@ -606,7 +611,7 @@ private:
         cipher.setKey(pw);
 
         vector<string> files(numFiles);
-        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getline(cin, files[i]); }
+        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
 
         cout << "\n🔄 Processing..." << endl;
         int ok = 0;
@@ -664,8 +669,8 @@ public:
                 case 1: { // Encrypt file
                     cout << "\n📝 ENCRYPT FILE" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter input filename: "; getline(cin, inputFile);
-                    cout << "Enter output filename (or Enter for auto): "; getline(cin, outputFile);
+                    cout << "Enter input filename: "; getLineTrim(inputFile);
+                    cout << "Enter output filename (or Enter for auto): "; getLineTrim(outputFile);
                     if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << "Output: " << outputFile << endl; }
                     pw = getPassword();
                     if (pw.empty()) break;
@@ -681,8 +686,8 @@ public:
                 case 2: { // Decrypt file
                     cout << "\n🔓 DECRYPT FILE" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter input filename: "; getline(cin, inputFile);
-                    cout << "Enter output filename (or Enter for auto): "; getline(cin, outputFile);
+                    cout << "Enter input filename: "; getLineTrim(inputFile);
+                    cout << "Enter output filename (or Enter for auto): "; getLineTrim(outputFile);
                     if (outputFile.empty()) {
                         outputFile = FileHelper::hasEncExtension(inputFile) ? FileHelper::removeEncExtension(inputFile) : "decrypted.txt";
                         cout << "Output: " << outputFile << endl;
@@ -701,7 +706,7 @@ public:
                 case 3: // Encrypt text
                     cout << "\n🔤 ENCRYPT TEXT" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter text to encrypt: "; getline(cin, text);
+                    cout << "Enter text to encrypt: "; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
@@ -711,7 +716,7 @@ public:
                 case 4: // Decrypt text
                     cout << "\n🔤 DECRYPT TEXT" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter hex ciphertext: "; getline(cin, text);
+                    cout << "Enter hex ciphertext: "; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
@@ -727,21 +732,21 @@ public:
                 case 7: // View file
                     cout << "\n👁️  VIEW FILE CONTENT" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename: "; getline(cin, inputFile);
+                    cout << "Enter filename: "; getLineTrim(inputFile);
                     cipher.displayFileContent(inputFile);
                     cout << "\nPress Enter to continue..."; cin.get(); break;
 
                 case 8: // File stats
                     cout << "\n📈 FILE STATISTICS" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename: "; getline(cin, inputFile);
+                    cout << "Enter filename: "; getLineTrim(inputFile);
                     cipher.showFileStats(inputFile);
                     cout << "\nPress Enter to continue..."; cin.get(); break;
 
                 case 9: // SHA-256 hash
                     cout << "\n#️⃣  SHA-256 FILE HASH" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename: "; getline(cin, inputFile);
+                    cout << "Enter filename: "; getLineTrim(inputFile);
                     { string h = cipher.hashFile(inputFile);
                       if (h.empty()) cerr << "\n❌ Cannot open file." << endl;
                       else cout << "\n🔑 SHA-256: " << h << endl;

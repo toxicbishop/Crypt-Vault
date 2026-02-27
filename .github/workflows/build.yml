@@ -28,22 +28,14 @@ jobs:
           # 1) Encrypt test.txt to test.enc with password 'mypassword'
           # 2) Decrypt test.enc to decrypted.txt with password 'mypassword'
           # 11) Exit
-          $inputs = @"
-          1
-          test.txt
-          test.enc
-          mypassword
-
-          2
-          test.enc
-          decrypted.txt
-          mypassword
-
-          11
-          "@
+          $inputs = "1", "test.txt", "test.enc", "mypassword", "", "2", "test.enc", "decrypted.txt", "mypassword", "", "11"
 
           # Pipe the inputs directly into our newly built executable
           $inputs | .\build\Crypt-Vault.exe
+
+          Write-Host "`n--- Directory Listing (Debugging) ---"
+          dir
+          Write-Host "---------------------------------------"
 
           # Verify that the decrypted text exactly matches the original text
           $mismatch = Compare-Object (Get-Content test.txt) (Get-Content decrypted.txt)
