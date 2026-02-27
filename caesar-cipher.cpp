@@ -593,72 +593,56 @@ private:
     void batchDecrypt() {
         cout << "\n📂 BATCH DECRYPT FILES" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-        
         int numFiles;
         cout << "How many files to decrypt? ";
         if (!(cin >> numFiles) || numFiles < 1) {
-            cout << "❌ Invalid number of files." << endl;
-            cin.clear();
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            return;
+            cout << "❌ Invalid number." << endl;
+            cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); return;
         }
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
-        
-        cipher.setShift(getValidShift());
-        
+
+        string pw = getPassword();
+        if (pw.empty()) return;
+        cipher.setKey(pw);
+
         vector<string> files(numFiles);
-        for (int i = 0; i < numFiles; i++) {
-            cout << "Enter filename " << (i + 1) << ": ";
-            getline(cin, files[i]);
-        }
-        
-        cout << "\n🔄 Processing files..." << endl;
-        int successCount = 0;
-        
-        for (const auto& file : files) {
-            string outFile;
-            if (FileHelper::hasEncExtension(file)) {
-                outFile = FileHelper::removeEncExtension(file);
-            } else {
-                outFile = "decrypted_" + file;
-            }
-            
-            if (FileHelper::fileExists(file)) {
-                clock_t start = clock();
-                if (cipher.decryptFile(file, outFile)) {
-                    clock_t end = clock();
-                    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
-                    cout << "✅ " << file << " → " << outFile 
-                         << " (" << fixed << setprecision(4) << time_spent << "s)" << endl;
-                    successCount++;
+        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getline(cin, files[i]); }
+
+        cout << "\n🔄 Processing..." << endl;
+        int ok = 0;
+        for (const auto& f : files) {
+            string outF = FileHelper::hasEncExtension(f) ? FileHelper::removeEncExtension(f) : "decrypted_" + f;
+            if (FileHelper::fileExists(f)) {
+                clock_t t = clock();
+                if (cipher.decryptFile(f, outF)) {
+                    cout << "✅ " << f << " → " << outF
+                         << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
+                    ok++;
                 }
-            } else {
-                cout << "❌ " << file << " (file not found)" << endl;
-            }
+            } else cout << "❌ " << f << " (not found)" << endl;
         }
-        
-        cout << "\n🎉 Batch decryption complete! " << successCount << "/" << numFiles << " files processed." << endl;
+        cout << "\n🎉 Done! " << ok << "/" << numFiles << " files decrypted." << endl;
     }
-    
+
     void showAbout() {
-        cout << "\n📚 ABOUT CAESAR CIPHER" << endl;
+        cout << "\n📚 ABOUT CRYPT VAULT" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-        cout << "\nThe Caesar Cipher is one of the simplest and oldest" << endl;
-        cout << "encryption techniques. It is a substitution cipher" << endl;
-        cout << "where each letter is shifted by a fixed number of" << endl;
-        cout << "positions in the alphabet." << endl << endl;
-        cout << "Example (shift = 3):" << endl;
-        cout << "  Plain:  A B C D E F G H I J K L M" << endl;
-        cout << "  Cipher: D E F G H I J K L M N O P" << endl << endl;
-        cout << "  \"HELLO\" → \"KHOOR\"" << endl << endl;
-        cout << "Named after Julius Caesar who used it to protect" << endl;
-        cout << "military messages." << endl << endl;
-        cout << "🔓 Weaknesses:" << endl;
-        cout << "  • Only 25 possible keys (easily brute-forced)" << endl;
-        cout << "  • Vulnerable to frequency analysis" << endl;
-        cout << "  • Not secure for modern use" << endl;
+        cout << "\nCrypt Vault uses AES-256-CBC, an industry-standard" << endl;
+        cout << "symmetric encryption algorithm used by governments" << endl;
+        cout << "and financial institutions worldwide." << endl << endl;
+        cout << "🔑 How it works:" << endl;
+        cout << "  1. Your password is hashed via SHA-256 → 256-bit key" << endl;
+        cout << "  2. A random 16-byte IV is generated per encryption" << endl;
+        cout << "  3. Data is padded (PKCS7) and encrypted in CBC mode" << endl;
+        cout << "  4. IV is prepended to the ciphertext (not secret)" << endl << endl;
+        cout << "✅ Security features:" << endl;
+        cout << "  • AES-256: 2^256 possible keys (unbreakable by brute force)" << endl;
+        cout << "  • CBC mode: each block depends on the previous" << endl;
+        cout << "  • Random IV: same plaintext encrypts differently each time" << endl;
+        cout << "  • PKCS7 padding: handles arbitrary-length data" << endl << endl;
+        cout << "⚠️  Remember: security depends on your password strength!" << endl;
     }
-    
+
 public:
     // Main application loop
     void run() {
