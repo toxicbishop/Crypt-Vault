@@ -156,10 +156,32 @@ namespace AES256Impl {
             a = xtime(a);
             b >>= 1;
         }
-        
-        if (!outFile.is_open()) {
-            cerr << "\n❌ Error: Cannot create output file '" << outputFile << "'" << endl;
-            return false;
+        return p;
+    }
+
+    struct Context {
+        unsigned char roundKey[240];
+        int Nr; // 14 rounds for AES-256
+
+        void keyExpansion(const unsigned char key[32]) {
+            Nr = 14;
+            int Nk = 8;
+            memcpy(roundKey, key, 32);
+            for (int i = Nk; i < 4 * (Nr + 1); i++) {
+                unsigned char temp[4];
+                memcpy(temp, roundKey + (i-1)*4, 4);
+                if (i % Nk == 0) {
+                    unsigned char t = temp[0];
+                    temp[0] = sbox[temp[1]] ^ rcon[i/Nk];
+                    temp[1] = sbox[temp[2]];
+                    temp[2] = sbox[temp[3]];
+                    temp[3] = sbox[t];
+                } else if (i % Nk == 4) {
+                    for (int j = 0; j < 4; j++) temp[j] = sbox[temp[j]];
+                }
+                for (int j = 0; j < 4; j++)
+                    roundKey[i*4+j] = roundKey[(i-Nk)*4+j] ^ temp[j];
+            }
         }
         
         char ch;
