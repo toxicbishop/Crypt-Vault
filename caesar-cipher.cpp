@@ -681,96 +681,43 @@ public:
                 case 2: { // Decrypt file
                     cout << "\n🔓 DECRYPT FILE" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter input filename: ";
-                    getline(cin, inputFile);
-                    
-                    cout << "Enter output filename (or press Enter for auto): ";
-                    getline(cin, outputFile);
-                    
+                    cout << "Enter input filename: "; getline(cin, inputFile);
+                    cout << "Enter output filename (or Enter for auto): "; getline(cin, outputFile);
                     if (outputFile.empty()) {
-                        if (FileHelper::hasEncExtension(inputFile)) {
-                            outputFile = FileHelper::removeEncExtension(inputFile);
-                        } else {
-                            outputFile = "decrypted.txt";
-                        }
-                        cout << "Output will be: " << outputFile << endl;
+                        outputFile = FileHelper::hasEncExtension(inputFile) ? FileHelper::removeEncExtension(inputFile) : "decrypted.txt";
+                        cout << "Output: " << outputFile << endl;
                     }
-                    
-                    cipher.setShift(getValidShift());
-                    
+                    pw = getPassword();
+                    if (pw.empty()) break;
+                    cipher.setKey(pw);
                     clock_t start = clock();
                     if (cipher.decryptFile(inputFile, outputFile)) {
-                        clock_t end = clock();
-                        double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
                         cout << "\n✅ File decrypted successfully!" << endl;
-                        cout << "⏱️  Time: " << fixed << setprecision(4) << time_spent << " seconds" << endl;
+                        cout << "⏱️  Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << " seconds" << endl;
                         cipher.showFileStats(outputFile);
                     }
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
+                    cout << "\nPress Enter to continue..."; cin.get(); break;
                 }
-                
                 case 3: // Encrypt text
                     cout << "\n🔤 ENCRYPT TEXT" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter text to encrypt: ";
-                    getline(cin, text);
-                    
-                    cipher.setShift(getValidShift());
-                    
-                    cout << "\n🔒 Encrypted: " << cipher.encryptText(text) << endl;
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
+                    cout << "Enter text to encrypt: "; getline(cin, text);
+                    pw = getPassword();
+                    if (pw.empty()) break;
+                    cipher.setKey(pw);
+                    cout << "\n🔒 Encrypted (hex): " << cipher.encryptText(text) << endl;
+                    cout << "\nPress Enter to continue..."; cin.get(); break;
+
                 case 4: // Decrypt text
                     cout << "\n🔤 DECRYPT TEXT" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter text to decrypt: ";
-                    getline(cin, text);
-                    
-                    cipher.setShift(getValidShift());
-                    
-                    cout << "\n🔓 Decrypted: " << cipher.decryptText(text) << endl;
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 5: // Brute force
-                    cout << "\n🔨 BRUTE FORCE DECRYPTION" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter encrypted filename: ";
-                    getline(cin, inputFile);
-                    
-                    cipher.bruteForceDecrypt(inputFile);
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 6: // Frequency analysis
-                    cout << "\n📊 FREQUENCY ANALYSIS" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename to analyze: ";
-                    getline(cin, inputFile);
-                    
-                    cipher.frequencyAnalysis(inputFile);
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 7: // ROT13
-                    cout << "\n🔄 ROT13 ENCRYPTION/DECRYPTION" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter input filename: ";
-                    getline(cin, inputFile);
-                    
-                    cout << "Enter output filename: ";
-                    getline(cin, outputFile);
-                    
-                    if (cipher.rot13File(inputFile, outputFile)) {
-                        cout << "\n✅ ROT13 applied successfully!" << endl;
-                        cipher.showFileStats(outputFile);
+                    cout << "Enter hex ciphertext: "; getline(cin, text);
+                    pw = getPassword();
+                    if (pw.empty()) break;
+                    cipher.setKey(pw);
+                    { string result = cipher.decryptText(text);
+                      if (result.empty()) cout << "\n❌ Decryption failed (wrong password or invalid data)" << endl;
+                      else cout << "\n🔓 Decrypted: " << result << endl;
                     }
                     cout << "\nPress Enter to continue...";
                     cin.get();
