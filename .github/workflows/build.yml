@@ -33,10 +33,12 @@ jobs:
           test.txt
           test.enc
           mypassword
+
           2
           test.enc
           decrypted.txt
           mypassword
+
           11
           "@
 
