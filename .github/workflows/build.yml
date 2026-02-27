@@ -15,7 +15,7 @@ jobs:
       # GCC comes pre-installed on Windows runner via MSYS2
       - name: Compile Crypt Vault (C++17)
         run: |
-          mkdir build
+          if (!(Test-Path build)) { mkdir build }
           g++ -o build/Crypt-Vault.exe Crypt-Vault.cpp -std=c++17 -Wall -Wextra -O2 -ladvapi32
 
       - name: Run E2E Encryption/Decryption Test
