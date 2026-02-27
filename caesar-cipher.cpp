@@ -1,13 +1,12 @@
 /*
- * Enhanced Caesar Cipher Tool (C++ Version)
- * 
+ * Crypt Vault — AES-256-CBC Encryption Tool (C++ Version)
+ *
  * Features:
- * - Object-Oriented Design (Classes for Logic, File Ops, and App)
- * - File Encryption/Decryption
- * - Text Encryption/Decryption
- * - Brute Force Cracking
- * - Frequency Analysis
- * - Batch Processing
+ * - AES-256-CBC file & text encryption/decryption
+ * - SHA-256 password-based key derivation
+ * - PKCS7 padding, random IV via Windows CryptoAPI
+ * - Batch processing, file stats, SHA-256 hashing
+ * - No external dependencies
  */
 
 #include <iostream>  // Input/output stream objects
