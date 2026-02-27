@@ -264,33 +264,114 @@ namespace AES256Impl {
                 invShiftRows(state); invSubBytes(state); addRoundKey(state, round); invMixColumns(state);
             }
         }
-        
-        cout << "\n💡 In English, common letters are: E, T, A, O, I, N" << endl;
+    };
+}
+
+// ═══════════════════════════════════════════════════════════
+// Utility Functions
+// ═══════════════════════════════════════════════════════════
+
+bool generateRandomBytes(unsigned char* buf, size_t len) {
+#ifdef _WIN32
+    HCRYPTPROV hProv;
+    if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) return false;
+    BOOL result = CryptGenRandom(hProv, (DWORD)len, buf);
+    CryptReleaseContext(hProv, 0);
+    return result != 0;
+#else
+    ifstream rnd("/dev/urandom", ios::binary);
+    if (!rnd.is_open()) return false;
+    rnd.read((char*)buf, len);
+    return rnd.good();
+#endif
+}
+
+vector<unsigned char> pkcs7Pad(const vector<unsigned char>& data) {
+    size_t padLen = 16 - (data.size() % 16);
+    vector<unsigned char> padded = data;
+    padded.insert(padded.end(), padLen, (unsigned char)padLen);
+    return padded;
+}
+
+bool pkcs7Unpad(vector<unsigned char>& data) {
+    if (data.empty() || data.size() % 16 != 0) return false;
+    unsigned char pad = data.back();
+    if (pad < 1 || pad > 16) return false;
+    for (size_t i = data.size() - pad; i < data.size(); i++)
+        if (data[i] != pad) return false;
+    data.resize(data.size() - pad);
+    return true;
+}
+
+string bytesToHex(const unsigned char* data, size_t len) {
+    stringstream ss;
+    for (size_t i = 0; i < len; i++) ss << hex << setfill('0') << setw(2) << (int)data[i];
+    return ss.str();
+}
+
+vector<unsigned char> hexToBytes(const string& hex) {
+    vector<unsigned char> bytes;
+    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+        unsigned char b = (unsigned char)strtol(hex.substr(i, 2).c_str(), nullptr, 16);
+        bytes.push_back(b);
     }
-    
-    // ROT13 is a special Caesar cipher with shift 13
-    bool rot13File(const string& inputFile, const string& outputFile) {
-        int oldShift = shift;
-        shift = 13; // Temporarily set shift to 13
-        bool result = encryptFile(inputFile, outputFile);
-        shift = oldShift; // Restore original shift
-        return result;
+    return bytes;
+}
+
+// ═══════════════════════════════════════════════════════════
+// AES Cipher Class
+// ═══════════════════════════════════════════════════════════
+
+class AESCipher {
+private:
+    unsigned char key[32];
+    AES256Impl::Context ctx;
+
+public:
+    void setKey(const string& password) {
+        auto hash = SHA256Impl::hash(password);
+        memcpy(key, hash.data(), 32);
+        ctx.keyExpansion(key);
     }
-    
-    // Encrypts a string directly (for quick text operations)
-    string encryptText(const string& text) const {
-        string result;
-        for (char ch : text) {
-            result += encryptChar(ch);
+
+    vector<unsigned char> encrypt(const vector<unsigned char>& plaintext) {
+        auto padded = pkcs7Pad(plaintext);
+        unsigned char iv[16];
+        if (!generateRandomBytes(iv, 16)) {
+            cerr << "Error: Could not generate random IV" << endl;
+            return {};
+        }
+
+        vector<unsigned char> result(iv, iv + 16);
+        unsigned char prev[16];
+        memcpy(prev, iv, 16);
+
+        for (size_t i = 0; i < padded.size(); i += 16) {
+            unsigned char block[16];
+            for (int j = 0; j < 16; j++) block[j] = padded[i+j] ^ prev[j];
+            ctx.encryptBlock(block);
+            result.insert(result.end(), block, block + 16);
+            memcpy(prev, block, 16);
         }
         return result;
     }
-    
-    // Decrypts a string directly
-    string decryptText(const string& text) const {
-        string result;
-        for (char ch : text) {
-            result += decryptChar(ch);
+
+    vector<unsigned char> decrypt(const vector<unsigned char>& ciphertext) {
+        if (ciphertext.size() < 32 || (ciphertext.size() - 16) % 16 != 0) return {};
+
+        unsigned char prev[16];
+        memcpy(prev, ciphertext.data(), 16);
+
+        vector<unsigned char> result;
+        for (size_t i = 16; i < ciphertext.size(); i += 16) {
+            unsigned char block[16];
+            memcpy(block, &ciphertext[i], 16);
+            unsigned char enc[16];
+            memcpy(enc, block, 16);
+            ctx.decryptBlock(block);
+            for (int j = 0; j < 16; j++) block[j] ^= prev[j];
+            result.insert(result.end(), block, block + 16);
+            memcpy(prev, enc, 16);
         }
         return result;
     }
