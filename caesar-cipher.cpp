@@ -263,6 +263,11 @@ namespace AES256Impl {
             for (int round = Nr - 1; round > 0; round--) {
                 invShiftRows(state); invSubBytes(state); addRoundKey(state, round); invMixColumns(state);
             }
+            invShiftRows(state); invSubBytes(state); addRoundKey(state, 0);
+
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    block[i*4+j] = state[j][i];
         }
     };
 }
@@ -373,10 +378,56 @@ public:
             result.insert(result.end(), block, block + 16);
             memcpy(prev, enc, 16);
         }
+
+        if (!pkcs7Unpad(result)) return {};
         return result;
     }
-    
-    // Displays file content (first 50 lines)
+
+    bool encryptFile(const string& inputFile, const string& outputFile) {
+        ifstream in(inputFile, ios::binary);
+        if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
+        vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+        in.close();
+
+        auto enc = encrypt(data);
+        if (enc.empty()) { cerr << "\n❌ Encryption failed" << endl; return false; }
+
+        ofstream out(outputFile, ios::binary);
+        if (!out.is_open()) { cerr << "\n❌ Error: Cannot create '" << outputFile << "'" << endl; return false; }
+        out.write((char*)enc.data(), enc.size());
+        out.close();
+        return true;
+    }
+
+    bool decryptFile(const string& inputFile, const string& outputFile) {
+        ifstream in(inputFile, ios::binary);
+        if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
+        vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+        in.close();
+
+        auto dec = decrypt(data);
+        if (dec.empty()) { cerr << "\n❌ Decryption failed (wrong password or corrupt file)" << endl; return false; }
+
+        ofstream out(outputFile, ios::binary);
+        if (!out.is_open()) { cerr << "\n❌ Error: Cannot create '" << outputFile << "'" << endl; return false; }
+        out.write((char*)dec.data(), dec.size());
+        out.close();
+        return true;
+    }
+
+    string encryptText(const string& text) {
+        vector<unsigned char> data(text.begin(), text.end());
+        auto enc = encrypt(data);
+        return bytesToHex(enc.data(), enc.size());
+    }
+
+    string decryptText(const string& hexCipher) {
+        auto data = hexToBytes(hexCipher);
+        auto dec = decrypt(data);
+        if (dec.empty()) return "";
+        return string(dec.begin(), dec.end());
+    }
+
     void displayFileContent(const string& filename) {
         ifstream file(filename);
         
