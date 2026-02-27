@@ -644,61 +644,40 @@ private:
     }
 
 public:
-    // Main application loop
     void run() {
         int choice;
-        string inputFile, outputFile, text;
-        
+        string inputFile, outputFile, text, pw;
+
         while (true) {
             clearScreen();
             displayMenu();
-            
-            cout << "Enter your choice (1-13): ";
-            // Input validation
+            cout << "Enter your choice (1-11): ";
             if (!(cin >> choice)) {
-                cin.clear(); // Reset error flags
-                cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Discard bad input
-                cout << "\n❌ Invalid input! Press Enter to continue...";
-                cin.get();
-                continue;
+                cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                cout << "\n❌ Invalid input! Press Enter to continue..."; cin.get(); continue;
             }
-            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Consume newline
-            
-            if (choice == 13) {
-                cout << "\n👋 Thank you for using Enhanced Caesar Cipher! Goodbye!" << endl;
-                break;
-            }
-            
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+            if (choice == 11) { cout << "\n👋 Thank you for using Crypt Vault! Goodbye!" << endl; break; }
+
             switch (choice) {
                 case 1: { // Encrypt file
                     cout << "\n📝 ENCRYPT FILE" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter input filename: ";
-                    getline(cin, inputFile);
-                    
-                    cout << "Enter output filename (or press Enter for auto): ";
-                    getline(cin, outputFile);
-                    
-                    if (outputFile.empty()) {
-                        outputFile = FileHelper::addEncExtension(inputFile);
-                        cout << "Output will be: " << outputFile << endl;
-                    }
-                    
-                    cipher.setShift(getValidShift());
-                    
+                    cout << "Enter input filename: "; getline(cin, inputFile);
+                    cout << "Enter output filename (or Enter for auto): "; getline(cin, outputFile);
+                    if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << "Output: " << outputFile << endl; }
+                    pw = getPassword();
+                    if (pw.empty()) break;
+                    cipher.setKey(pw);
                     clock_t start = clock();
                     if (cipher.encryptFile(inputFile, outputFile)) {
-                        clock_t end = clock();
-                        double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
                         cout << "\n✅ File encrypted successfully!" << endl;
-                        cout << "⏱️  Time: " << fixed << setprecision(4) << time_spent << " seconds" << endl;
+                        cout << "⏱️  Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << " seconds" << endl;
                         cipher.showFileStats(outputFile);
                     }
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
+                    cout << "\nPress Enter to continue..."; cin.get(); break;
                 }
-                
                 case 2: { // Decrypt file
                     cout << "\n🔓 DECRYPT FILE" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
