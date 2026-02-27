@@ -472,36 +472,26 @@ public:
     }
 };
 
-// Utility class for file path and extension operations
+// ═══════════════════════════════════════════════════════════
+// File Helper
+// ═══════════════════════════════════════════════════════════
+
 class FileHelper {
 public:
-    // Appends .enc to filename
-    static string addEncExtension(const string& filename) {
-        return filename + ".enc";
+    static string addEncExtension(const string& f) { return f + ".enc"; }
+    static string removeEncExtension(const string& f) {
+        if (f.length() > 4 && f.substr(f.length()-4) == ".enc") return f.substr(0, f.length()-4);
+        return f;
     }
-    
-    // Removes .enc from filename if present
-    static string removeEncExtension(const string& filename) {
-        if (filename.length() > 4 && filename.substr(filename.length() - 4) == ".enc") {
-            return filename.substr(0, filename.length() - 4);
-        }
-        return filename;
-    }
-    
-    // Checks if filename ends with .enc
-    static bool hasEncExtension(const string& filename) {
-        return filename.length() > 4 && filename.substr(filename.length() - 4) == ".enc";
-    }
-    
-    // Checks if a file exists on disk
-    static bool fileExists(const string& filename) {
-        ifstream file(filename);
-        return file.good();
-    }
+    static bool hasEncExtension(const string& f) { return f.length() > 4 && f.substr(f.length()-4) == ".enc"; }
+    static bool fileExists(const string& f) { ifstream file(f); return file.good(); }
 };
 
-// Application Class: Handles User Interface and Menu Logic
-class CaesarCipherApp {
+// ═══════════════════════════════════════════════════════════
+// Application Class
+// ═══════════════════════════════════════════════════════════
+
+class CryptVaultApp {
 private:
     CaesarCipher cipher; // Instance of the cipher logic class
     
