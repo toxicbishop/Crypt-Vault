@@ -493,9 +493,8 @@ public:
 
 class CryptVaultApp {
 private:
-    CaesarCipher cipher; // Instance of the cipher logic class
-    
-    // Clears terminal screen based on OS
+    AESCipher cipher;
+
     void clearScreen() {
         #ifdef _WIN32
             system("cls");
@@ -503,49 +502,59 @@ private:
             system("clear");
         #endif
     }
-    
+
     void displayMenu() {
         cout << "\n";
         cout << "╔════════════════════════════════════════════════════╗" << endl;
         cout << "║                                                    ║" << endl;
-        cout << "║      🔐 ENHANCED CAESAR CIPHER TOOL 🔐            ║" << endl;
+        cout << "║     🔐 CRYPT VAULT — AES-256 ENCRYPTION 🔐       ║" << endl;
         cout << "║                                                    ║" << endl;
         cout << "╚════════════════════════════════════════════════════╝" << endl << endl;
-        cout << "  📝 BASIC OPERATIONS" << endl;
+        cout << "  📝 CORE OPERATIONS" << endl;
         cout << "  1. 🔒 Encrypt a file" << endl;
         cout << "  2. 🔓 Decrypt a file" << endl;
         cout << "  3. 🔤 Encrypt text (quick)" << endl;
-        cout << "  4. 🔤 Decrypt text (quick)" << endl;
-        cout << "  5. 🔨 Brute force decryption (try all shifts)" << endl << endl;
-        cout << "  🔬 ANALYSIS TOOLS" << endl;
-        cout << "  6. 📊 Frequency analysis" << endl;
-        cout << "  7. 🔄 ROT13 encryption/decryption" << endl << endl;
+        cout << "  4. 🔤 Decrypt text (quick)" << endl << endl;
         cout << "  📦 BATCH OPERATIONS" << endl;
-        cout << "  8. 📂 Batch encrypt multiple files" << endl;
-        cout << "  9. 📂 Batch decrypt multiple files" << endl << endl;
+        cout << "  5. 📂 Batch encrypt multiple files" << endl;
+        cout << "  6. 📂 Batch decrypt multiple files" << endl << endl;
         cout << "  🛠️  UTILITIES" << endl;
-        cout << "  10. 👁️  View file content" << endl;
-        cout << "  11. 📈 File statistics" << endl;
-        cout << "  12. 📚 About Caesar Cipher" << endl;
-        cout << "  13. 🚪 Exit" << endl << endl;
+        cout << "  7. 👁️  View file content" << endl;
+        cout << "  8. 📈 File statistics" << endl;
+        cout << "  9. #️⃣  SHA-256 file hash" << endl;
+        cout << "  10. 📚 About Crypt Vault" << endl;
+        cout << "  11. 🚪 Exit" << endl << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl << endl;
     }
-    
-    // Prompts user for a shift value (1-25) with validation
-    int getValidShift() {
-        int shift;
-        while (true) {
-            cout << "Enter shift value (1-25): ";
-            if (cin >> shift && shift >= 1 && shift <= 25) {
-                // Clear buffer after valid input
-                cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                return shift;
-            }
-            // Handle invalid input (e.g. letters)
-            cin.clear(); // Clear error flag
-            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Discard bad input
-            cout << "❌ Invalid! Enter a number between 1 and 25." << endl;
+
+    string getPassword(const string& prompt = "Enter password: ") {
+        string password;
+        cout << prompt;
+        getline(cin, password);
+        if (password.empty()) { cout << "❌ Password cannot be empty." << endl; return ""; }
+
+        // Password strength indicator
+        int score = 0;
+        if (password.length() >= 8) score++;
+        if (password.length() >= 12) score++;
+        bool hasUpper=false, hasLower=false, hasDigit=false, hasSpecial=false;
+        for (char c : password) {
+            if (isupper(c)) hasUpper=true;
+            else if (islower(c)) hasLower=true;
+            else if (isdigit(c)) hasDigit=true;
+            else hasSpecial=true;
         }
+        if (hasUpper && hasLower) score++;
+        if (hasDigit) score++;
+        if (hasSpecial) score++;
+
+        string strength;
+        if (score <= 1) strength = "🔴 Weak";
+        else if (score <= 3) strength = "🟡 Medium";
+        else strength = "🟢 Strong";
+        cout << "   Password strength: " << strength << endl;
+
+        return password;
     }
     
     // Handles encyption of multiple files at once
