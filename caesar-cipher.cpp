@@ -442,29 +442,33 @@ public:
 
     void showFileStats(const string& filename) {
         struct stat st;
-        stat(filename.c_str(), &st);
-        long fileSize = st.st_size;
-        
-        file.seekg(0);
-        int charCount = 0, letterCount = 0, numberCount = 0, lineCount = 0;
+        if (stat(filename.c_str(), &st) != 0) { cerr << "\n❌ Error: Cannot stat '" << filename << "'" << endl; return; }
+        ifstream file(filename, ios::binary);
+        if (!file.is_open()) return;
+        int charCount=0, letterCount=0, numberCount=0, lineCount=0;
         char ch;
-        
-        // Scan file content for stats
         while (file.get(ch)) {
             charCount++;
-            if (isalpha(ch)) letterCount++;
-            if (isdigit(ch)) numberCount++;
+            if (isalpha((unsigned char)ch)) letterCount++;
+            if (isdigit((unsigned char)ch)) numberCount++;
             if (ch == '\n') lineCount++;
         }
         file.close();
-        
         cout << "\n📈 File Statistics for '" << filename << "':" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-        cout << "📏 File size:      " << fileSize << " bytes" << endl;
+        cout << "📏 File size:      " << st.st_size << " bytes" << endl;
         cout << "📝 Total chars:    " << charCount << endl;
         cout << "🔤 Letters:        " << letterCount << endl;
         cout << "🔢 Numbers:        " << numberCount << endl;
         cout << "📄 Lines:          " << lineCount << endl;
+    }
+
+    string hashFile(const string& filename) {
+        ifstream file(filename, ios::binary);
+        if (!file.is_open()) return "";
+        vector<unsigned char> data((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
+        file.close();
+        return SHA256Impl::toHex(SHA256Impl::hash(data.data(), data.size()));
     }
 };
 
