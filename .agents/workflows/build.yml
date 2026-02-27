@@ -1,0 +1,24 @@
+name: Build and Test Crypt Vault
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # GCC comes pre-installed on Windows runner via MSYS2
+      - name: Compile Crypt Vault (C++17)
+        run: |
+          mkdir build
+          g++ -o build/Crypt-Vault.exe Crypt-Vault.cpp -std=c++17 -Wall -Wextra -O2 -ladvapi32
+
+      - name: Verify Executable
+        run: |
+          # Pipe exit command (11) into standard input to immediately quit the interactive menu to ensure the app doesn't immediately crash.
+          echo 11 | .\build\Crypt-Vault.exe
