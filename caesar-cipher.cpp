@@ -208,64 +208,31 @@ namespace AES256Impl {
             t = state[2][0]; state[2][0]=state[2][2]; state[2][2]=t; t=state[2][1]; state[2][1]=state[2][3]; state[2][3]=t;
             t = state[3][3]; state[3][3]=state[3][2]; state[3][2]=state[3][1]; state[3][1]=state[3][0]; state[3][0]=t;
         }
-        
-        inFile.close();
-        outFile.close();
-        return true;
-    }
-    
-    // Brute force attack: Tries all possible shifts (1-25)
-    void bruteForceDecrypt(const string& inputFile) {
-        ifstream inFile(inputFile);
-        
-        if (!inFile.is_open()) {
-            cerr << "\n❌ Error: Cannot open file '" << inputFile << "'" << endl;
-            return;
+
+        void invShiftRows(unsigned char state[4][4]) {
+            unsigned char t;
+            t = state[1][3]; state[1][3]=state[1][2]; state[1][2]=state[1][1]; state[1][1]=state[1][0]; state[1][0]=t;
+            t = state[2][0]; state[2][0]=state[2][2]; state[2][2]=t; t=state[2][1]; state[2][1]=state[2][3]; state[2][3]=t;
+            t = state[3][0]; state[3][0]=state[3][1]; state[3][1]=state[3][2]; state[3][2]=state[3][3]; state[3][3]=t;
         }
-        
-        // Read entire file into string
-        string content((istreambuf_iterator<char>(inFile)), istreambuf_iterator<char>());
-        inFile.close();
-        
-        cout << "\n🔨 Trying all 25 possible shifts:" << endl;
-        cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl << endl;
-        
-        // Try every shift and print partial result
-        for (int s = 1; s <= 25; s++) {
-            cout << "Shift " << setw(2) << s << ": ";
-            
-            int charCount = 0;
-            for (char ch : content) {
-                if (charCount >= 60) break; // Limit preview length
-                char decrypted = decryptCharWithShift(ch, s);
-                if (decrypted == '\n' || decrypted == '\r') break;
-                cout << decrypted;
-                charCount++;
+
+        void mixColumns(unsigned char state[4][4]) {
+            for (int i = 0; i < 4; i++) {
+                unsigned char a[4]; memcpy(a, &state[0][i], 1); a[0]=state[0][i]; a[1]=state[1][i]; a[2]=state[2][i]; a[3]=state[3][i];
+                state[0][i] = gmul(a[0],2)^gmul(a[1],3)^a[2]^a[3];
+                state[1][i] = a[0]^gmul(a[1],2)^gmul(a[2],3)^a[3];
+                state[2][i] = a[0]^a[1]^gmul(a[2],2)^gmul(a[3],3);
+                state[3][i] = gmul(a[0],3)^a[1]^a[2]^gmul(a[3],2);
             }
-            cout << endl;
         }
-        
-        cout << "\n💡 Tip: Look for readable text to find the correct shift!" << endl;
-    }
-    
-    // Analyzes letter frequency (useful for cryptanalysis)
-    void frequencyAnalysis(const string& inputFile) {
-        ifstream file(inputFile);
-        
-        if (!file.is_open()) {
-            cerr << "\n❌ Error: Cannot open file '" << inputFile << "'" << endl;
-            return;
-        }
-        
-        vector<int> freq(26, 0); // Vector to store counts of 26 letters
-        int totalLetters = 0;
-        char ch;
-        
-        // Count occurrences of each letter
-        while (file.get(ch)) {
-            if (isalpha(ch)) {
-                freq[toupper(ch) - 'A']++;
-                totalLetters++;
+
+        void invMixColumns(unsigned char state[4][4]) {
+            for (int i = 0; i < 4; i++) {
+                unsigned char a[4] = {state[0][i],state[1][i],state[2][i],state[3][i]};
+                state[0][i] = gmul(a[0],14)^gmul(a[1],11)^gmul(a[2],13)^gmul(a[3],9);
+                state[1][i] = gmul(a[0],9)^gmul(a[1],14)^gmul(a[2],11)^gmul(a[3],13);
+                state[2][i] = gmul(a[0],13)^gmul(a[1],9)^gmul(a[2],14)^gmul(a[3],11);
+                state[3][i] = gmul(a[0],11)^gmul(a[1],13)^gmul(a[2],9)^gmul(a[3],14);
             }
         }
         file.close();
