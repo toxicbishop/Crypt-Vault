@@ -252,26 +252,16 @@ namespace AES256Impl {
                 for (int j = 0; j < 4; j++)
                     block[i*4+j] = state[j][i];
         }
-        
-        cout << "\n📊 Letter Frequency Analysis:" << endl;
-        cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-        cout << "Total letters: " << totalLetters << endl << endl;
-        
-        int maxFreq = *max_element(freq.begin(), freq.end());
-        
-        for (int i = 0; i < 26; i++) {
-            if (freq[i] > 0) {
-                char letter = 'A' + i;
-                float percentage = (float)freq[i] / totalLetters * 100;
-                int barLength = (int)((float)freq[i] / maxFreq * 40);
-                
-                cout << letter << ": " << setw(4) << freq[i] 
-                     << " (" << fixed << setprecision(2) << setw(5) << percentage << "%) ";
-                
-                for (int j = 0; j < barLength; j++) {
-                    cout << "█";
-                }
-                cout << endl;
+
+        void decryptBlock(unsigned char block[16]) {
+            unsigned char state[4][4];
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    state[j][i] = block[i*4+j];
+
+            addRoundKey(state, Nr);
+            for (int round = Nr - 1; round > 0; round--) {
+                invShiftRows(state); invSubBytes(state); addRoundKey(state, round); invMixColumns(state);
             }
         }
         
