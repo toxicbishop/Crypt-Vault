@@ -556,55 +556,40 @@ private:
 
         return password;
     }
-    
-    // Handles encyption of multiple files at once
+
     void batchEncrypt() {
         cout << "\n📂 BATCH ENCRYPT FILES" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-        
         int numFiles;
         cout << "How many files to encrypt? ";
         if (!(cin >> numFiles) || numFiles < 1) {
-            cout << "❌ Invalid number of files." << endl;
-            cin.clear();
-            cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            return;
+            cout << "❌ Invalid number." << endl;
+            cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n'); return;
         }
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
-        
-        // Get shift once for all files
-        cipher.setShift(getValidShift());
-        
+
+        string pw = getPassword();
+        if (pw.empty()) return;
+        cipher.setKey(pw);
+
         vector<string> files(numFiles);
-        for (int i = 0; i < numFiles; i++) {
-            cout << "Enter filename " << (i + 1) << ": ";
-            getline(cin, files[i]);
-        }
-        
-        cout << "\n🔄 Processing files..." << endl;
-        int successCount = 0;
-        
-        for (const auto& file : files) {
-            string outFile = FileHelper::addEncExtension(file);
-            
-            if (FileHelper::fileExists(file)) {
-                clock_t start = clock();
-                if (cipher.encryptFile(file, outFile)) {
-                    clock_t end = clock();
-                    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
-                    cout << "✅ " << file << " → " << outFile 
-                         << " (" << fixed << setprecision(4) << time_spent << "s)" << endl;
-                    successCount++;
+        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getline(cin, files[i]); }
+
+        cout << "\n🔄 Processing..." << endl;
+        int ok = 0;
+        for (const auto& f : files) {
+            if (FileHelper::fileExists(f)) {
+                clock_t t = clock();
+                if (cipher.encryptFile(f, FileHelper::addEncExtension(f))) {
+                    cout << "✅ " << f << " → " << FileHelper::addEncExtension(f)
+                         << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
+                    ok++;
                 }
-            } else {
-                cout << "❌ " << file << " (file not found)" << endl;
-            }
+            } else cout << "❌ " << f << " (not found)" << endl;
         }
-        
-        cout << "\n🎉 Batch encryption complete! " << successCount << "/" << numFiles << " files processed." << endl;
+        cout << "\n🎉 Done! " << ok << "/" << numFiles << " files encrypted." << endl;
     }
-    
-    // Handles decryption of multiple files at once
+
     void batchDecrypt() {
         cout << "\n📂 BATCH DECRYPT FILES" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
