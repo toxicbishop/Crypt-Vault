@@ -719,54 +719,40 @@ public:
                       if (result.empty()) cout << "\n❌ Decryption failed (wrong password or invalid data)" << endl;
                       else cout << "\n🔓 Decrypted: " << result << endl;
                     }
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 8: // Batch encrypt
-                    batchEncrypt();
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 9: // Batch decrypt
-                    batchDecrypt();
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 10: // View file
+                    cout << "\nPress Enter to continue..."; cin.get(); break;
+
+                case 5: batchEncrypt(); cout << "\nPress Enter to continue..."; cin.get(); break;
+                case 6: batchDecrypt(); cout << "\nPress Enter to continue..."; cin.get(); break;
+
+                case 7: // View file
                     cout << "\n👁️  VIEW FILE CONTENT" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename to view: ";
-                    getline(cin, inputFile);
-                    
+                    cout << "Enter filename: "; getline(cin, inputFile);
                     cipher.displayFileContent(inputFile);
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 11: // File statistics
+                    cout << "\nPress Enter to continue..."; cin.get(); break;
+
+                case 8: // File stats
                     cout << "\n📈 FILE STATISTICS" << endl;
                     cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename: ";
-                    getline(cin, inputFile);
-                    
+                    cout << "Enter filename: "; getline(cin, inputFile);
                     cipher.showFileStats(inputFile);
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
-                case 12: // About
-                    showAbout();
-                    cout << "\nPress Enter to continue...";
-                    cin.get();
-                    break;
-                    
+                    cout << "\nPress Enter to continue..."; cin.get(); break;
+
+                case 9: // SHA-256 hash
+                    cout << "\n#️⃣  SHA-256 FILE HASH" << endl;
+                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
+                    cout << "Enter filename: "; getline(cin, inputFile);
+                    { string h = cipher.hashFile(inputFile);
+                      if (h.empty()) cerr << "\n❌ Cannot open file." << endl;
+                      else cout << "\n🔑 SHA-256: " << h << endl;
+                    }
+                    cout << "\nPress Enter to continue..."; cin.get(); break;
+
+                case 10: showAbout(); cout << "\nPress Enter to continue..."; cin.get(); break;
+
                 default:
-                    cout << "\n❌ Invalid choice! Please select 1-13." << endl;
-                    cout << "Press Enter to continue...";
-                    cin.get();
+                    cout << "\n❌ Invalid choice! Please select 1-11." << endl;
+                    cout << "Press Enter to continue..."; cin.get();
             }
         }
     }
@@ -774,7 +760,7 @@ public:
 
 // Program Entry Point
 int main() {
-    CaesarCipherApp app; // Create application instance
-    app.run();           // Start the application loop
+    CryptVaultApp app;
+    app.run();
     return 0;
 }
