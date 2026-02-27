@@ -195,10 +195,11 @@ namespace AES256Impl {
                 for (int j = 0; j < 4; j++)
                     state[i][j] = sbox[state[i][j]];
         }
-        
-        if (!outFile.is_open()) {
-            cerr << "\n❌ Error: Cannot create output file '" << outputFile << "'" << endl;
-            return false;
+
+        void invSubBytes(unsigned char state[4][4]) {
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    state[i][j] = rsbox[state[i][j]];
         }
         
         char ch;
