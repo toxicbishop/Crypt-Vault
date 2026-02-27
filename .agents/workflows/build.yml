@@ -18,7 +18,36 @@ jobs:
           mkdir build
           g++ -o build/Crypt-Vault.exe Crypt-Vault.cpp -std=c++17 -Wall -Wextra -O2 -ladvapi32
 
-      - name: Verify Executable
+      - name: Run E2E Encryption/Decryption Test
+        shell: powershell
         run: |
-          # Pipe exit command (11) into standard input to immediately quit the interactive menu to ensure the app doesn't immediately crash.
-          echo 11 | .\build\Crypt-Vault.exe
+          # Create a dummy test file
+          Set-Content -Path test.txt -Value "Secure Message 123"
+
+          # Simulate user interactions via Standard Input:
+          # 1) Encrypt test.txt to test.enc with password 'mypassword'
+          # 2) Decrypt test.enc to decrypted.txt with password 'mypassword'
+          # 11) Exit
+          $inputs = @"
+          1
+          test.txt
+          test.enc
+          mypassword
+          2
+          test.enc
+          decrypted.txt
+          mypassword
+          11
+          "@
+
+          # Pipe the inputs directly into our newly built executable
+          $inputs | .\build\Crypt-Vault.exe
+
+          # Verify that the decrypted text exactly matches the original text
+          $mismatch = Compare-Object (Get-Content test.txt) (Get-Content decrypted.txt)
+          if ($mismatch) {
+              Write-Error "Test failed: Decrypted file does not match original."
+              exit 1
+          } else {
+              Write-Host "Test passed! Files matched."
+          }
