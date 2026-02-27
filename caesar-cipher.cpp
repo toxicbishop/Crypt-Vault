@@ -430,12 +430,7 @@ public:
 
     void displayFileContent(const string& filename) {
         ifstream file(filename);
-        
-        if (!file.is_open()) {
-            cerr << "\n❌ Error: Cannot open file '" << filename << "'" << endl;
-            return;
-        }
-        
+        if (!file.is_open()) { cerr << "\n❌ Error: Cannot open '" << filename << "'" << endl; return; }
         cout << "\n📄 Content of '" << filename << "':" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
         
