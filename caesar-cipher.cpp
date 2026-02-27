@@ -201,11 +201,12 @@ namespace AES256Impl {
                 for (int j = 0; j < 4; j++)
                     state[i][j] = rsbox[state[i][j]];
         }
-        
-        char ch;
-        // Process file char by char using decryptChar logic
-        while (inFile.get(ch)) {
-            outFile.put(decryptChar(ch));
+
+        void shiftRows(unsigned char state[4][4]) {
+            unsigned char t;
+            t = state[1][0]; state[1][0]=state[1][1]; state[1][1]=state[1][2]; state[1][2]=state[1][3]; state[1][3]=t;
+            t = state[2][0]; state[2][0]=state[2][2]; state[2][2]=t; t=state[2][1]; state[2][1]=state[2][3]; state[2][3]=t;
+            t = state[3][3]; state[3][3]=state[3][2]; state[3][2]=state[3][1]; state[3][1]=state[3][0]; state[3][0]=t;
         }
         
         inFile.close();
