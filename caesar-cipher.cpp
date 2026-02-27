@@ -83,35 +83,17 @@ namespace SHA256Impl {
             }
             h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=hh;
         }
-        return ch; // Non-alphanumeric chars unchanged
-    }
-    
-    // Helper: Decrypts a single character
-    char decryptChar(char ch) const {
-        if (isupper(ch)) {
-            return ((ch - 'A' - shift + 26) % 26) + 'A';
-        } else if (islower(ch)) {
-            return ((ch - 'a' - shift + 26) % 26) + 'a';
-        } else if (isdigit(ch)) {
-            int val = (ch - '0' - shift) % 10;
-            if (val < 0) val += 10;
-            return val + '0';
+
+        vector<unsigned char> result(32);
+        for (int i = 0; i < 8; i++) {
+            result[i*4]=(h[i]>>24)&0xff; result[i*4+1]=(h[i]>>16)&0xff;
+            result[i*4+2]=(h[i]>>8)&0xff; result[i*4+3]=h[i]&0xff;
         }
-        return ch;
+        return result;
     }
-    
-    // Helper: Decrypts character with a specific test shift (for brute force)
-    char decryptCharWithShift(char ch, int s) const {
-        if (isupper(ch)) {
-            return ((ch - 'A' - s + 26) % 26) + 'A';
-        } else if (islower(ch)) {
-            return ((ch - 'a' - s + 26) % 26) + 'a';
-        } else if (isdigit(ch)) {
-            int val = (ch - '0' - s) % 10;
-            if (val < 0) val += 10;
-            return val + '0';
-        }
-        return ch;
+
+    vector<unsigned char> hash(const string& s) {
+        return hash((const unsigned char*)s.data(), s.size());
     }
     
 public:
