@@ -9,7 +9,6 @@
  * - No external dependencies
  */
 
-#include <fstream>   // File stream objects
 #include <string>    // String class
 #include <vector>    // Dynamic array container
 #include <cctype>    // Character handling functions
@@ -18,6 +17,7 @@
 #include <algorithm> // Algorithms like max_element
 #include <iomanip>   // Input/output manipulators (setw, setprecision)
 #include <sys/stat.h> // File status
+#include <iostream>
 
 using namespace std;
 
