@@ -183,26 +183,17 @@ namespace AES256Impl {
                     roundKey[i*4+j] = roundKey[(i-Nk)*4+j] ^ temp[j];
             }
         }
-        
-        char ch;
-        // Process file char by char
-        while (inFile.get(ch)) {
-            outFile.put(encryptChar(ch));
+
+        void addRoundKey(unsigned char state[4][4], int round) {
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    state[j][i] ^= roundKey[round*16 + i*4 + j];
         }
-        
-        inFile.close();
-        outFile.close();
-        return true;
-    }
-    
-    // Decrypts source file to destination file
-    bool decryptFile(const string& inputFile, const string& outputFile) {
-        ifstream inFile(inputFile);
-        ofstream outFile(outputFile);
-        
-        if (!inFile.is_open()) {
-            cerr << "\n❌ Error: Cannot open input file '" << inputFile << "'" << endl;
-            return false;
+
+        void subBytes(unsigned char state[4][4]) {
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    state[i][j] = sbox[state[i][j]];
         }
         
         if (!outFile.is_open()) {
