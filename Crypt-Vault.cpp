@@ -3,7 +3,7 @@
  *
  * Features:
  * - AES-256-CBC file & text encryption/decryption
- * - SHA-256 password-based key derivation
+ * - PBKDF2-SHA256 key derivation (100,000 iterations + random salt)
  * - PKCS7 padding, random IV via Windows CryptoAPI
  * - Batch processing, file stats, SHA-256 hashing
  * - No external dependencies
@@ -103,6 +103,96 @@ namespace SHA256Impl {
         stringstream ss;
         for (auto b : h) ss << hex << setfill('0') << setw(2) << (int)b;
         return ss.str();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// HMAC-SHA256 Implementation
+// ═══════════════════════════════════════════════════════════
+
+namespace HMAC_SHA256 {
+    vector<unsigned char> compute(const unsigned char* key, size_t keyLen,
+                                   const unsigned char* data, size_t dataLen) {
+        const size_t blockSize = 64;
+        unsigned char keyBlock[blockSize];
+        memset(keyBlock, 0, blockSize);
+
+        // If key > blockSize, hash it first
+        if (keyLen > blockSize) {
+            auto hashedKey = SHA256Impl::hash(key, keyLen);
+            memcpy(keyBlock, hashedKey.data(), 32);
+        } else {
+            memcpy(keyBlock, key, keyLen);
+        }
+
+        // Create inner and outer padded keys
+        unsigned char ipad[blockSize], opad[blockSize];
+        for (size_t i = 0; i < blockSize; i++) {
+            ipad[i] = keyBlock[i] ^ 0x36;
+            opad[i] = keyBlock[i] ^ 0x5c;
+        }
+
+        // Inner hash: H(ipad || data)
+        vector<unsigned char> innerData(blockSize + dataLen);
+        memcpy(innerData.data(), ipad, blockSize);
+        memcpy(innerData.data() + blockSize, data, dataLen);
+        auto innerHash = SHA256Impl::hash(innerData.data(), innerData.size());
+
+        // Outer hash: H(opad || innerHash)
+        vector<unsigned char> outerData(blockSize + 32);
+        memcpy(outerData.data(), opad, blockSize);
+        memcpy(outerData.data() + blockSize, innerHash.data(), 32);
+        return SHA256Impl::hash(outerData.data(), outerData.size());
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// PBKDF2-SHA256 Implementation
+// ═══════════════════════════════════════════════════════════
+
+namespace PBKDF2 {
+    const int DEFAULT_ITERATIONS = 100000;
+    const int SALT_SIZE = 16;
+
+    vector<unsigned char> derive(const string& password, const unsigned char* salt,
+                                  size_t saltLen, int iterations, size_t dkLen) {
+        vector<unsigned char> dk;
+        dk.reserve(dkLen);
+
+        size_t hLen = 32; // SHA-256 output size
+        size_t numBlocks = (dkLen + hLen - 1) / hLen;
+
+        for (size_t blockNum = 1; blockNum <= numBlocks; blockNum++) {
+            // U1 = PRF(Password, Salt || INT_32_BE(i))
+            vector<unsigned char> saltBlock(saltLen + 4);
+            memcpy(saltBlock.data(), salt, saltLen);
+            saltBlock[saltLen]     = (blockNum >> 24) & 0xff;
+            saltBlock[saltLen + 1] = (blockNum >> 16) & 0xff;
+            saltBlock[saltLen + 2] = (blockNum >> 8) & 0xff;
+            saltBlock[saltLen + 3] = blockNum & 0xff;
+
+            auto U = HMAC_SHA256::compute(
+                (const unsigned char*)password.data(), password.size(),
+                saltBlock.data(), saltBlock.size());
+
+            vector<unsigned char> T = U; // T = U1
+
+            // T ^= U2 ^ U3 ^ ... ^ Uc
+            for (int iter = 1; iter < iterations; iter++) {
+                U = HMAC_SHA256::compute(
+                    (const unsigned char*)password.data(), password.size(),
+                    U.data(), U.size());
+                for (size_t j = 0; j < hLen; j++) {
+                    T[j] ^= U[j];
+                }
+            }
+
+            // Append T to derived key
+            for (size_t j = 0; j < hLen && dk.size() < dkLen; j++) {
+                dk.push_back(T[j]);
+            }
+        }
+        return dk;
     }
 }
 
@@ -333,13 +423,32 @@ vector<unsigned char> hexToBytes(const string& hex) {
 class AESCipher {
 private:
     unsigned char key[32];
+    unsigned char currentSalt[PBKDF2::SALT_SIZE];
     AES256Impl::Context ctx;
+    bool keyFromSalt = false;
+
+    void deriveKeyFromSalt(const string& password, const unsigned char* salt) {
+        auto derived = PBKDF2::derive(password, salt, PBKDF2::SALT_SIZE,
+                                       PBKDF2::DEFAULT_ITERATIONS, 32);
+        memcpy(key, derived.data(), 32);
+        memcpy(currentSalt, salt, PBKDF2::SALT_SIZE);
+        ctx.keyExpansion(key);
+    }
 
 public:
     void setKey(const string& password) {
-        auto hash = SHA256Impl::hash(password);
-        memcpy(key, hash.data(), 32);
-        ctx.keyExpansion(key);
+        // Generate random salt for encryption
+        if (!generateRandomBytes(currentSalt, PBKDF2::SALT_SIZE)) {
+            cerr << "Error: Could not generate random salt" << endl;
+            return;
+        }
+        deriveKeyFromSalt(password, currentSalt);
+        keyFromSalt = false;
+    }
+
+    void setKeyWithSalt(const string& password, const unsigned char* salt) {
+        deriveKeyFromSalt(password, salt);
+        keyFromSalt = true;
     }
 
     vector<unsigned char> encrypt(const vector<unsigned char>& plaintext) {
@@ -350,7 +459,10 @@ public:
             return {};
         }
 
-        vector<unsigned char> result(iv, iv + 16);
+        // Prepend salt + IV to result
+        vector<unsigned char> result;
+        result.insert(result.end(), currentSalt, currentSalt + PBKDF2::SALT_SIZE);
+        result.insert(result.end(), iv, iv + 16);
         unsigned char prev[16];
         memcpy(prev, iv, 16);
 
@@ -364,14 +476,22 @@ public:
         return result;
     }
 
-    vector<unsigned char> decrypt(const vector<unsigned char>& ciphertext) {
-        if (ciphertext.size() < 32 || (ciphertext.size() - 16) % 16 != 0) return {};
+    vector<unsigned char> decrypt(const vector<unsigned char>& ciphertext, const string& password = "") {
+        // Format: salt(16) + iv(16) + ciphertext (must be multiple of 16)
+        if (ciphertext.size() < 48 || (ciphertext.size() - 32) % 16 != 0) return {};
 
+        // Extract salt and derive key if password provided
+        const unsigned char* salt = ciphertext.data();
+        if (!password.empty()) {
+            deriveKeyFromSalt(password, salt);
+        }
+
+        // Extract IV (after salt)
         unsigned char prev[16];
-        memcpy(prev, ciphertext.data(), 16);
+        memcpy(prev, ciphertext.data() + PBKDF2::SALT_SIZE, 16);
 
         vector<unsigned char> result;
-        for (size_t i = 16; i < ciphertext.size(); i += 16) {
+        for (size_t i = PBKDF2::SALT_SIZE + 16; i < ciphertext.size(); i += 16) {
             unsigned char block[16];
             memcpy(block, &ciphertext[i], 16);
             unsigned char enc[16];
@@ -386,12 +506,13 @@ public:
         return result;
     }
 
-    bool encryptFile(const string& inputFile, const string& outputFile) {
+    bool encryptFile(const string& inputFile, const string& outputFile, const string& password) {
         ifstream in(inputFile, ios::binary);
         if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
         vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
         in.close();
 
+        setKey(password); // Generate new salt
         auto enc = encrypt(data);
         if (enc.empty()) { cerr << "\n❌ Encryption failed" << endl; return false; }
 
@@ -402,13 +523,13 @@ public:
         return true;
     }
 
-    bool decryptFile(const string& inputFile, const string& outputFile) {
+    bool decryptFile(const string& inputFile, const string& outputFile, const string& password) {
         ifstream in(inputFile, ios::binary);
         if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
         vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
         in.close();
 
-        auto dec = decrypt(data);
+        auto dec = decrypt(data, password); // Extract salt from file and derive key
         if (dec.empty()) { cerr << "\n❌ Decryption failed (wrong password or corrupt file)" << endl; return false; }
 
         ofstream out(outputFile, ios::binary);
@@ -418,15 +539,16 @@ public:
         return true;
     }
 
-    string encryptText(const string& text) {
+    string encryptText(const string& text, const string& password) {
+        setKey(password); // Generate new salt
         vector<unsigned char> data(text.begin(), text.end());
         auto enc = encrypt(data);
         return bytesToHex(enc.data(), enc.size());
     }
 
-    string decryptText(const string& hexCipher) {
+    string decryptText(const string& hexCipher, const string& password) {
         auto data = hexToBytes(hexCipher);
-        auto dec = decrypt(data);
+        auto dec = decrypt(data, password); // Extract salt from data
         if (dec.empty()) return "";
         return string(dec.begin(), dec.end());
     }
@@ -542,7 +664,7 @@ private:
    ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝        ╚═╝         ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝   
 )" << RESET << endl;
         cout << GRAY << "                    AES-256-CBC Encryption Tool • Secure File Protection" << RESET << endl;
-        cout << GRAY << "             SHA-256 Key Derivation • PKCS7 Padding • Windows CryptoAPI" << RESET << endl;
+        cout << GRAY << "             PBKDF2-SHA256 Key Derivation • PKCS7 Padding • Windows CryptoAPI" << RESET << endl;
         cout << endl;
     }
 
@@ -629,7 +751,6 @@ private:
 
         string pw = getPassword();
         if (pw.empty()) return;
-        cipher.setKey(pw);
 
         vector<string> files(numFiles);
         for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
@@ -639,7 +760,7 @@ private:
         for (const auto& f : files) {
             if (FileHelper::fileExists(f)) {
                 clock_t t = clock();
-                if (cipher.encryptFile(f, FileHelper::addEncExtension(f))) {
+                if (cipher.encryptFile(f, FileHelper::addEncExtension(f), pw)) {
                     cout << "✅ " << f << " → " << FileHelper::addEncExtension(f)
                          << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
                     ok++;
@@ -662,7 +783,6 @@ private:
 
         string pw = getPassword();
         if (pw.empty()) return;
-        cipher.setKey(pw);
 
         vector<string> files(numFiles);
         for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
@@ -673,7 +793,7 @@ private:
             string outF = FileHelper::hasEncExtension(f) ? FileHelper::removeEncExtension(f) : "decrypted_" + f;
             if (FileHelper::fileExists(f)) {
                 clock_t t = clock();
-                if (cipher.decryptFile(f, outF)) {
+                if (cipher.decryptFile(f, outF, pw)) {
                     cout << "✅ " << f << " → " << outF
                          << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
                     ok++;
@@ -690,14 +810,17 @@ private:
         cout << "symmetric encryption algorithm used by governments" << endl;
         cout << "and financial institutions worldwide." << endl << endl;
         cout << "🔑 How it works:" << endl;
-        cout << "  1. Your password is hashed via SHA-256 → 256-bit key" << endl;
+        cout << "  1. PBKDF2-SHA256 derives a 256-bit key from your password" << endl;
+        cout << "     (100,000 iterations + random 16-byte salt)" << endl;
         cout << "  2. A random 16-byte IV is generated per encryption" << endl;
         cout << "  3. Data is padded (PKCS7) and encrypted in CBC mode" << endl;
-        cout << "  4. IV is prepended to the ciphertext (not secret)" << endl << endl;
+        cout << "  4. Salt + IV are prepended to the ciphertext" << endl << endl;
         cout << "✅ Security features:" << endl;
+        cout << "  • PBKDF2: makes brute-force attacks 100,000x slower" << endl;
+        cout << "  • Random salt: same password encrypts differently each time" << endl;
         cout << "  • AES-256: 2^256 possible keys (unbreakable by brute force)" << endl;
         cout << "  • CBC mode: each block depends on the previous" << endl;
-        cout << "  • Random IV: same plaintext encrypts differently each time" << endl;
+        cout << "  • Random IV: adds additional randomization" << endl;
         cout << "  • PKCS7 padding: handles arbitrary-length data" << endl << endl;
         cout << "⚠️  Remember: security depends on your password strength!" << endl;
     }
@@ -740,9 +863,9 @@ public:
                     if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << GRAY << "  (auto: " << outputFile << ")" << RESET << endl; }
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cipher.setKey(pw);
+                    cout << GRAY << "  🔒 Deriving key (PBKDF2, 100k iterations)..." << RESET << endl;
                     clock_t start = clock();
-                    if (cipher.encryptFile(inputFile, outputFile)) {
+                    if (cipher.encryptFile(inputFile, outputFile, pw)) {
                         cout << GREEN << "\n  ✓ File encrypted successfully!" << RESET << endl;
                         cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
@@ -759,9 +882,9 @@ public:
                     }
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cipher.setKey(pw);
+                    cout << GRAY << "  🔓 Deriving key (PBKDF2, 100k iterations)..." << RESET << endl;
                     clock_t start = clock();
-                    if (cipher.decryptFile(inputFile, outputFile)) {
+                    if (cipher.decryptFile(inputFile, outputFile, pw)) {
                         cout << GREEN << "\n  ✓ File decrypted successfully!" << RESET << endl;
                         cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
@@ -773,8 +896,8 @@ public:
                     cout << GRAY << "  plaintext → " << RESET; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cipher.setKey(pw);
-                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << cipher.encryptText(text) << endl;
+                    cout << GRAY << "  🔒 Deriving key..." << RESET << endl;
+                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << cipher.encryptText(text, pw) << endl;
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 4: // Decrypt text
@@ -782,8 +905,8 @@ public:
                     cout << GRAY << "  ciphertext (hex) → " << RESET; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cipher.setKey(pw);
-                    { string result = cipher.decryptText(text);
+                    cout << GRAY << "  🔓 Deriving key..." << RESET << endl;
+                    { string result = cipher.decryptText(text, pw);
                       if (result.empty()) cout << RED << "\n  ✗ Decryption failed (wrong password or invalid data)" << RESET << endl;
                       else cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
                     }
