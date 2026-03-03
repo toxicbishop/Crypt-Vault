@@ -24,6 +24,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <wincrypt.h>
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
 #else
 #include <cstdlib>
 #endif
@@ -508,28 +511,79 @@ private:
         #endif
     }
 
+    void enableVirtualTerminal() {
+        #ifdef _WIN32
+        // Enable UTF-8 console output
+        SetConsoleOutputCP(65001);
+        // Enable ANSI escape sequences
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD dwMode = 0;
+        if (hOut != INVALID_HANDLE_VALUE && GetConsoleMode(hOut, &dwMode)) {
+            SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        }
+        #endif
+    }
+
+    void displayBanner() {
+        // ANSI color codes for styling
+        const string ORANGE = "\033[38;5;208m";
+        const string GRAY = "\033[38;5;245m";
+        const string CYAN = "\033[38;5;44m";
+        const string RESET = "\033[0m";
+        const string BOLD = "\033[1m";
+
+        cout << ORANGE;
+        cout << R"(
+   ██████╗██████╗ ██╗   ██╗██████╗ ████████╗    ██╗   ██╗ █████╗ ██╗   ██╗██╗  ████████╗
+  ██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗╚══██╔══╝    ██║   ██║██╔══██╗██║   ██║██║  ╚══██╔══╝
+  ██║     ██████╔╝ ╚████╔╝ ██████╔╝   ██║       ██║   ██║███████║██║   ██║██║     ██║   
+  ██║     ██╔══██╗  ╚██╔╝  ██╔═══╝    ██║       ╚██╗ ██╔╝██╔══██║██║   ██║██║     ██║   
+  ╚██████╗██║  ██║   ██║   ██║        ██║        ╚████╔╝ ██║  ██║╚██████╔╝███████╗██║   
+   ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝        ╚═╝         ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝   
+)" << RESET << endl;
+        cout << GRAY << "                    AES-256-CBC Encryption Tool • Secure File Protection" << RESET << endl;
+        cout << GRAY << "             SHA-256 Key Derivation • PKCS7 Padding • Windows CryptoAPI" << RESET << endl;
+        cout << endl;
+    }
+
     void displayMenu() {
-        cout << "\n";
-        cout << "╔════════════════════════════════════════════════════╗" << endl;
-        cout << "║                                                    ║" << endl;
-        cout << "║     🔐 CRYPT VAULT — AES-256 ENCRYPTION 🔐       ║" << endl;
-        cout << "║                                                    ║" << endl;
-        cout << "╚════════════════════════════════════════════════════╝" << endl << endl;
-        cout << "  📝 CORE OPERATIONS" << endl;
-        cout << "  1. 🔒 Encrypt a file" << endl;
-        cout << "  2. 🔓 Decrypt a file" << endl;
-        cout << "  3. 🔤 Encrypt text (quick)" << endl;
-        cout << "  4. 🔤 Decrypt text (quick)" << endl << endl;
-        cout << "  📦 BATCH OPERATIONS" << endl;
-        cout << "  5. 📂 Batch encrypt multiple files" << endl;
-        cout << "  6. 📂 Batch decrypt multiple files" << endl << endl;
-        cout << "  🛠️  UTILITIES" << endl;
-        cout << "  7. 👁️  View file content" << endl;
-        cout << "  8. 📈 File statistics" << endl;
-        cout << "  9. #️⃣  SHA-256 file hash" << endl;
-        cout << "  10. 📚 About Crypt Vault" << endl;
-        cout << "  11. 🚪 Exit" << endl << endl;
-        cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl << endl;
+        // ANSI color codes
+        const string CYAN = "\033[38;5;44m";
+        const string GREEN = "\033[38;5;82m";
+        const string YELLOW = "\033[38;5;220m";
+        const string GRAY = "\033[38;5;245m";
+        const string WHITE = "\033[38;5;255m";
+        const string RESET = "\033[0m";
+
+        displayBanner();
+
+        cout << GRAY << "  Type a " << CYAN << "number" << GRAY << " to select a command" << RESET << endl;
+        cout << GRAY << "  Press " << CYAN << "11" << GRAY << " to exit the application" << RESET << endl;
+        cout << endl;
+        cout << GREEN << "  →" << RESET << endl;
+        cout << endl;
+
+        cout << WHITE << "  ─── CORE OPERATIONS ───────────────────────────────────────" << RESET << endl;
+        cout << CYAN << "   1" << GRAY << "  encrypt    " << WHITE << "Encrypt a file with AES-256" << RESET << endl;
+        cout << CYAN << "   2" << GRAY << "  decrypt    " << WHITE << "Decrypt an encrypted file" << RESET << endl;
+        cout << CYAN << "   3" << GRAY << "  enc-text   " << WHITE << "Quick text encryption" << RESET << endl;
+        cout << CYAN << "   4" << GRAY << "  dec-text   " << WHITE << "Quick text decryption" << RESET << endl;
+        cout << endl;
+
+        cout << WHITE << "  ─── BATCH OPERATIONS ──────────────────────────────────────" << RESET << endl;
+        cout << CYAN << "   5" << GRAY << "  batch-enc  " << WHITE << "Encrypt multiple files at once" << RESET << endl;
+        cout << CYAN << "   6" << GRAY << "  batch-dec  " << WHITE << "Decrypt multiple files at once" << RESET << endl;
+        cout << endl;
+
+        cout << WHITE << "  ─── UTILITIES ─────────────────────────────────────────────" << RESET << endl;
+        cout << CYAN << "   7" << GRAY << "  view       " << WHITE << "View file content" << RESET << endl;
+        cout << CYAN << "   8" << GRAY << "  stats      " << WHITE << "Show file statistics" << RESET << endl;
+        cout << CYAN << "   9" << GRAY << "  hash       " << WHITE << "Calculate SHA-256 hash" << RESET << endl;
+        cout << CYAN << "  10" << GRAY << "  about      " << WHITE << "About Crypt Vault" << RESET << endl;
+        cout << CYAN << "  11" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
+        cout << endl;
+        cout << GRAY << "  ─────────────────────────────────────────────────────────────" << RESET << endl;
+        cout << endl;
     }
 
     string getPassword(const string& prompt = "Enter password: ") {
@@ -650,114 +704,120 @@ private:
 
 public:
     void run() {
+        enableVirtualTerminal();
+        
+        // ANSI color codes
+        const string CYAN = "\033[38;5;44m";
+        const string GREEN = "\033[38;5;82m";
+        const string RED = "\033[38;5;196m";
+        const string YELLOW = "\033[38;5;220m";
+        const string GRAY = "\033[38;5;245m";
+        const string RESET = "\033[0m";
+        
         int choice;
         string inputFile, outputFile, text, pw;
 
         while (true) {
             clearScreen();
             displayMenu();
-            cout << "Enter your choice (1-11): ";
+            cout << GREEN << "  → " << RESET;
             if (!(cin >> choice)) {
                 cin.clear(); cin.ignore(numeric_limits<streamsize>::max(), '\n');
-                cout << "\n❌ Invalid input! Press Enter to continue..."; cin.get(); continue;
+                cout << RED << "\n  ✗ Invalid input! Press Enter to continue..." << RESET; cin.get(); continue;
             }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-            if (choice == 11) { cout << "\n👋 Thank you for using Crypt Vault! Goodbye!" << endl; break; }
+            if (choice == 11) { 
+                cout << CYAN << "\n  ✓ Thank you for using Crypt Vault. Goodbye!\n" << RESET << endl;
+                break; 
+            }
 
             switch (choice) {
                 case 1: { // Encrypt file
-                    cout << "\n📝 ENCRYPT FILE" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter input filename: "; getLineTrim(inputFile);
-                    cout << "Enter output filename (or Enter for auto): "; getLineTrim(outputFile);
-                    if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << "Output: " << outputFile << endl; }
+                    cout << CYAN << "\n  ─── ENCRYPT FILE ───\n" << RESET << endl;
+                    cout << GRAY << "  input file  → " << RESET; getLineTrim(inputFile);
+                    cout << GRAY << "  output file → " << RESET; getLineTrim(outputFile);
+                    if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << GRAY << "  (auto: " << outputFile << ")" << RESET << endl; }
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
                     clock_t start = clock();
                     if (cipher.encryptFile(inputFile, outputFile)) {
-                        cout << "\n✅ File encrypted successfully!" << endl;
-                        cout << "⏱️  Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << " seconds" << endl;
+                        cout << GREEN << "\n  ✓ File encrypted successfully!" << RESET << endl;
+                        cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
                     }
-                    cout << "\nPress Enter to continue..."; cin.get(); break;
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 }
                 case 2: { // Decrypt file
-                    cout << "\n🔓 DECRYPT FILE" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter input filename: "; getLineTrim(inputFile);
-                    cout << "Enter output filename (or Enter for auto): "; getLineTrim(outputFile);
+                    cout << CYAN << "\n  ─── DECRYPT FILE ───\n" << RESET << endl;
+                    cout << GRAY << "  input file  → " << RESET; getLineTrim(inputFile);
+                    cout << GRAY << "  output file → " << RESET; getLineTrim(outputFile);
                     if (outputFile.empty()) {
                         outputFile = FileHelper::hasEncExtension(inputFile) ? FileHelper::removeEncExtension(inputFile) : "decrypted.txt";
-                        cout << "Output: " << outputFile << endl;
+                        cout << GRAY << "  (auto: " << outputFile << ")" << RESET << endl;
                     }
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
                     clock_t start = clock();
                     if (cipher.decryptFile(inputFile, outputFile)) {
-                        cout << "\n✅ File decrypted successfully!" << endl;
-                        cout << "⏱️  Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << " seconds" << endl;
+                        cout << GREEN << "\n  ✓ File decrypted successfully!" << RESET << endl;
+                        cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
                     }
-                    cout << "\nPress Enter to continue..."; cin.get(); break;
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 }
                 case 3: // Encrypt text
-                    cout << "\n🔤 ENCRYPT TEXT" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter text to encrypt: "; getLineTrim(text);
+                    cout << CYAN << "\n  ─── ENCRYPT TEXT ───\n" << RESET << endl;
+                    cout << GRAY << "  plaintext → " << RESET; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
-                    cout << "\n🔒 Encrypted (hex): " << cipher.encryptText(text) << endl;
-                    cout << "\nPress Enter to continue..."; cin.get(); break;
+                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << cipher.encryptText(text) << endl;
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 4: // Decrypt text
-                    cout << "\n🔤 DECRYPT TEXT" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter hex ciphertext: "; getLineTrim(text);
+                    cout << CYAN << "\n  ─── DECRYPT TEXT ───\n" << RESET << endl;
+                    cout << GRAY << "  ciphertext (hex) → " << RESET; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
                     { string result = cipher.decryptText(text);
-                      if (result.empty()) cout << "\n❌ Decryption failed (wrong password or invalid data)" << endl;
-                      else cout << "\n🔓 Decrypted: " << result << endl;
+                      if (result.empty()) cout << RED << "\n  ✗ Decryption failed (wrong password or invalid data)" << RESET << endl;
+                      else cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
                     }
-                    cout << "\nPress Enter to continue..."; cin.get(); break;
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
-                case 5: batchEncrypt(); cout << "\nPress Enter to continue..."; cin.get(); break;
-                case 6: batchDecrypt(); cout << "\nPress Enter to continue..."; cin.get(); break;
+                case 5: batchEncrypt(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 6: batchDecrypt(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 7: // View file
-                    cout << "\n👁️  VIEW FILE CONTENT" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename: "; getLineTrim(inputFile);
+                    cout << CYAN << "\n  ─── VIEW FILE ───\n" << RESET << endl;
+                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile);
                     cipher.displayFileContent(inputFile);
-                    cout << "\nPress Enter to continue..."; cin.get(); break;
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 8: // File stats
-                    cout << "\n📈 FILE STATISTICS" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename: "; getLineTrim(inputFile);
+                    cout << CYAN << "\n  ─── FILE STATISTICS ───\n" << RESET << endl;
+                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile);
                     cipher.showFileStats(inputFile);
-                    cout << "\nPress Enter to continue..."; cin.get(); break;
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 9: // SHA-256 hash
-                    cout << "\n#️⃣  SHA-256 FILE HASH" << endl;
-                    cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
-                    cout << "Enter filename: "; getLineTrim(inputFile);
+                    cout << CYAN << "\n  ─── SHA-256 HASH ───\n" << RESET << endl;
+                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile);
                     { string h = cipher.hashFile(inputFile);
-                      if (h.empty()) cerr << "\n❌ Cannot open file." << endl;
-                      else cout << "\n🔑 SHA-256: " << h << endl;
+                      if (h.empty()) cerr << RED << "\n  ✗ Cannot open file." << RESET << endl;
+                      else cout << GREEN << "\n  ✓ SHA-256: " << RESET << h << endl;
                     }
-                    cout << "\nPress Enter to continue..."; cin.get(); break;
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
-                case 10: showAbout(); cout << "\nPress Enter to continue..."; cin.get(); break;
+                case 10: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 default:
-                    cout << "\n❌ Invalid choice! Please select 1-11." << endl;
-                    cout << "Press Enter to continue..."; cin.get();
+                    cout << RED << "\n  ✗ Invalid choice! Please select 1-11." << RESET << endl;
+                    cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
             }
         }
     }
