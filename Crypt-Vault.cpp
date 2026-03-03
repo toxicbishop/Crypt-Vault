@@ -327,33 +327,160 @@ vector<unsigned char> hexToBytes(const string& hex) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// AES Cipher Class
+// Security Primitives (HMAC, PBKDF2, Memory Safety)
+// ═══════════════════════════════════════════════════════════
+
+// Secure memory wipe - prevents compiler optimization
+void secure_memzero(void* ptr, size_t len) {
+    volatile unsigned char* p = (volatile unsigned char*)ptr;
+    while (len--) *p++ = 0;
+#if defined(__GNUC__) || defined(__clang__)
+    asm volatile("" ::: "memory");
+#elif defined(_MSC_VER)
+    _ReadWriteBarrier();
+#endif
+}
+
+// Constant-time comparison to prevent timing attacks
+bool constant_time_compare(const unsigned char* a, const unsigned char* b, size_t len) {
+    unsigned char diff = 0;
+    for (size_t i = 0; i < len; i++) {
+        diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
+}
+
+// HMAC-SHA256 implementation
+vector<unsigned char> hmac_sha256(const unsigned char* key, size_t keyLen, 
+                                   const unsigned char* data, size_t dataLen) {
+    const size_t BLOCK_SIZE = 64;
+    unsigned char keyBlock[BLOCK_SIZE] = {0};
+    
+    // If key > block size, hash it first
+    if (keyLen > BLOCK_SIZE) {
+        auto h = SHA256Impl::hash(key, keyLen);
+        memcpy(keyBlock, h.data(), 32);
+    } else {
+        memcpy(keyBlock, key, keyLen);
+    }
+    
+    // Create inner and outer padded keys
+    unsigned char ipad[BLOCK_SIZE], opad[BLOCK_SIZE];
+    for (size_t i = 0; i < BLOCK_SIZE; i++) {
+        ipad[i] = keyBlock[i] ^ 0x36;
+        opad[i] = keyBlock[i] ^ 0x5c;
+    }
+    
+    // Inner hash: H(ipad || data)
+    vector<unsigned char> inner(ipad, ipad + BLOCK_SIZE);
+    inner.insert(inner.end(), data, data + dataLen);
+    auto innerHash = SHA256Impl::hash(inner.data(), inner.size());
+    
+    // Outer hash: H(opad || innerHash)
+    vector<unsigned char> outer(opad, opad + BLOCK_SIZE);
+    outer.insert(outer.end(), innerHash.begin(), innerHash.end());
+    
+    return SHA256Impl::hash(outer.data(), outer.size());
+}
+
+// PBKDF2-SHA256 key derivation
+void pbkdf2_sha256(const string& password, const unsigned char* salt, size_t saltLen,
+                   int iterations, unsigned char* output, size_t dkLen) {
+    const size_t HASH_LEN = 32;
+    size_t blocks = (dkLen + HASH_LEN - 1) / HASH_LEN;
+    
+    for (size_t block = 1; block <= blocks; block++) {
+        // U1 = HMAC(password, salt || INT(block))
+        vector<unsigned char> saltBlock(salt, salt + saltLen);
+        saltBlock.push_back((block >> 24) & 0xFF);
+        saltBlock.push_back((block >> 16) & 0xFF);
+        saltBlock.push_back((block >> 8) & 0xFF);
+        saltBlock.push_back(block & 0xFF);
+        
+        auto U = hmac_sha256((unsigned char*)password.data(), password.size(),
+                             saltBlock.data(), saltBlock.size());
+        vector<unsigned char> T = U;
+        
+        // Iterate: T = U1 ^ U2 ^ ... ^ Uc
+        for (int i = 1; i < iterations; i++) {
+            U = hmac_sha256((unsigned char*)password.data(), password.size(),
+                           U.data(), U.size());
+            for (size_t j = 0; j < HASH_LEN; j++) T[j] ^= U[j];
+        }
+        
+        // Copy result block
+        size_t offset = (block - 1) * HASH_LEN;
+        size_t copyLen = min(HASH_LEN, dkLen - offset);
+        memcpy(output + offset, T.data(), copyLen);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// AES Cipher Class (PBKDF2 + HMAC-SHA256 Authentication)
+// File format: salt(16) + iv(16) + ciphertext + hmac(32)
 // ═══════════════════════════════════════════════════════════
 
 class AESCipher {
 private:
-    unsigned char key[32];
+    string storedPassword;
+    unsigned char encKey[32];
+    unsigned char authKey[32];
     AES256Impl::Context ctx;
+    
+    static const int SALT_SIZE = 16;
+    static const int IV_SIZE = 16;
+    static const int HMAC_SIZE = 32;
+    static const int PBKDF2_ITERATIONS = 100000;
+
+    // Derive encryption and authentication keys from password + salt
+    void deriveKeys(const unsigned char* salt) {
+        unsigned char derived[64];
+        pbkdf2_sha256(storedPassword, salt, SALT_SIZE, PBKDF2_ITERATIONS, derived, 64);
+        memcpy(encKey, derived, 32);      // First 32 bytes for encryption
+        memcpy(authKey, derived + 32, 32); // Last 32 bytes for authentication
+        secure_memzero(derived, 64);
+        ctx.keyExpansion(encKey);
+    }
+
+    // Compute HMAC over salt + iv + ciphertext
+    vector<unsigned char> computeHMAC(const unsigned char* data, size_t len) {
+        return hmac_sha256(authKey, 32, data, len);
+    }
+
+    // Constant-time HMAC verification
+    bool verifyHMAC(const unsigned char* data, size_t dataLen, const unsigned char* expectedHmac) {
+        auto computed = computeHMAC(data, dataLen);
+        return constant_time_compare(computed.data(), expectedHmac, HMAC_SIZE);
+    }
 
 public:
     void setKey(const string& password) {
-        auto hash = SHA256Impl::hash(password);
-        memcpy(key, hash.data(), 32);
-        ctx.keyExpansion(key);
+        storedPassword = password;
     }
 
     vector<unsigned char> encrypt(const vector<unsigned char>& plaintext) {
-        auto padded = pkcs7Pad(plaintext);
-        unsigned char iv[16];
-        if (!generateRandomBytes(iv, 16)) {
-            cerr << "Error: Could not generate random IV" << endl;
+        // Generate random salt and IV
+        unsigned char salt[SALT_SIZE];
+        unsigned char iv[IV_SIZE];
+        if (!generateRandomBytes(salt, SALT_SIZE) || !generateRandomBytes(iv, IV_SIZE)) {
+            cerr << "Error: Could not generate random salt/IV" << endl;
             return {};
         }
 
-        vector<unsigned char> result(iv, iv + 16);
+        // Derive keys from password + salt
+        deriveKeys(salt);
+
+        // Pad plaintext
+        auto padded = pkcs7Pad(plaintext);
+
+        // Build result: salt + iv + ciphertext (HMAC added at end)
+        vector<unsigned char> result;
+        result.insert(result.end(), salt, salt + SALT_SIZE);
+        result.insert(result.end(), iv, iv + IV_SIZE);
+
+        // CBC encrypt
         unsigned char prev[16];
         memcpy(prev, iv, 16);
-
         for (size_t i = 0; i < padded.size(); i += 16) {
             unsigned char block[16];
             for (int j = 0; j < 16; j++) block[j] = padded[i+j] ^ prev[j];
@@ -361,19 +488,49 @@ public:
             result.insert(result.end(), block, block + 16);
             memcpy(prev, block, 16);
         }
+
+        // Compute and append HMAC over salt + iv + ciphertext
+        auto hmac = computeHMAC(result.data(), result.size());
+        result.insert(result.end(), hmac.begin(), hmac.end());
+
+        // Secure cleanup
+        secure_memzero(salt, SALT_SIZE);
+        secure_memzero(iv, IV_SIZE);
+        
         return result;
     }
 
     vector<unsigned char> decrypt(const vector<unsigned char>& ciphertext) {
-        if (ciphertext.size() < 32 || (ciphertext.size() - 16) % 16 != 0) return {};
+        // Minimum size: salt(16) + iv(16) + one block(16) + hmac(32) = 80 bytes
+        if (ciphertext.size() < 80) return {};
+        
+        size_t dataLen = ciphertext.size() - HMAC_SIZE;
+        if ((dataLen - SALT_SIZE - IV_SIZE) % 16 != 0) return {};
 
-        unsigned char prev[16];
-        memcpy(prev, ciphertext.data(), 16);
+        // Extract components
+        const unsigned char* salt = ciphertext.data();
+        const unsigned char* iv = ciphertext.data() + SALT_SIZE;
+        const unsigned char* encData = ciphertext.data() + SALT_SIZE + IV_SIZE;
+        const unsigned char* hmac = ciphertext.data() + dataLen;
+        size_t encLen = dataLen - SALT_SIZE - IV_SIZE;
 
+        // Derive keys from password + salt
+        deriveKeys(salt);
+
+        // Verify HMAC BEFORE decryption (Encrypt-then-MAC)
+        if (!verifyHMAC(ciphertext.data(), dataLen, hmac)) {
+            cerr << "\n❌ HMAC verification failed - file tampered or wrong password" << endl;
+            return {};
+        }
+
+        // CBC decrypt
         vector<unsigned char> result;
-        for (size_t i = 16; i < ciphertext.size(); i += 16) {
+        unsigned char prev[16];
+        memcpy(prev, iv, 16);
+
+        for (size_t i = 0; i < encLen; i += 16) {
             unsigned char block[16];
-            memcpy(block, &ciphertext[i], 16);
+            memcpy(block, encData + i, 16);
             unsigned char enc[16];
             memcpy(enc, block, 16);
             ctx.decryptBlock(block);
