@@ -819,6 +819,22 @@ private:
         return password;
     }
 
+    // Password with confirmation - for encryption operations
+    string getPasswordWithConfirmation() {
+        string password = getPassword("Enter password: ");
+        if (password.empty()) return "";
+        
+        cout << "Confirm password: " << flush;
+        string confirm = getSecureInput();
+        
+        if (password != confirm) {
+            cout << "❌ Passwords do not match!" << endl;
+            return "";
+        }
+        cout << "   ✓ Passwords match" << endl;
+        return password;
+    }
+
     void batchEncrypt() {
         cout << "\n📂 BATCH ENCRYPT FILES" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
@@ -830,7 +846,7 @@ private:
         }
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-        string pw = getPassword();
+        string pw = getPasswordWithConfirmation();
         if (pw.empty()) return;
         cipher.setKey(pw);
 
@@ -941,7 +957,7 @@ public:
                     cout << GRAY << "  input file  → " << RESET; getLineTrim(inputFile);
                     cout << GRAY << "  output file → " << RESET; getLineTrim(outputFile);
                     if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << GRAY << "  (auto: " << outputFile << ")" << RESET << endl; }
-                    pw = getPassword();
+                    pw = getPasswordWithConfirmation();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
                     clock_t start = clock();
@@ -974,7 +990,7 @@ public:
                 case 3: // Encrypt text
                     cout << CYAN << "\n  ─── ENCRYPT TEXT ───\n" << RESET << endl;
                     cout << GRAY << "  plaintext → " << RESET; getLineTrim(text);
-                    pw = getPassword();
+                    pw = getPasswordWithConfirmation();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
                     cout << GREEN << "\n  ✓ Encrypted: " << RESET << cipher.encryptText(text) << endl;
