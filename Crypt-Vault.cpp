@@ -755,6 +755,339 @@ public:
 };
 
 // ═══════════════════════════════════════════════════════════
+// Benchmark Framework
+// ═══════════════════════════════════════════════════════════
+
+namespace Benchmark {
+    // High-resolution timer
+    struct Timer {
+        clock_t start;
+        void begin() { start = clock(); }
+        double elapsedMs() { return (double)(clock() - start) * 1000.0 / CLOCKS_PER_SEC; }
+        double elapsedSec() { return (double)(clock() - start) / CLOCKS_PER_SEC; }
+    };
+
+    // Format bytes to human readable
+    string formatBytes(size_t bytes) {
+        const char* units[] = {"B", "KB", "MB", "GB"};
+        int unit = 0;
+        double size = (double)bytes;
+        while (size >= 1024 && unit < 3) { size /= 1024; unit++; }
+        stringstream ss;
+        ss << fixed << setprecision(2) << size << " " << units[unit];
+        return ss.str();
+    }
+
+    // Format throughput
+    string formatThroughput(size_t bytes, double seconds) {
+        if (seconds <= 0) return "N/A";
+        double mbps = (bytes / (1024.0 * 1024.0)) / seconds;
+        stringstream ss;
+        ss << fixed << setprecision(2) << mbps << " MB/s";
+        return ss.str();
+    }
+
+    // Result structure
+    struct Result {
+        string name;
+        size_t dataSize;
+        int iterations;
+        double totalMs;
+        double avgMs;
+        double throughputMBs;
+        bool passed;
+    };
+
+    // Benchmark: Memory Operations
+    Result benchSecureMemzero(size_t size, int iterations) {
+        Result r{"secure_memzero", size, iterations, 0, 0, 0, true};
+        vector<unsigned char> buf(size);
+        
+        Timer t;
+        t.begin();
+        for (int i = 0; i < iterations; i++) {
+            memset(buf.data(), 0xAA, size);  // Fill with pattern
+            secure_memzero(buf.data(), size);
+        }
+        r.totalMs = t.elapsedMs();
+        r.avgMs = r.totalMs / iterations;
+        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
+        
+        // Verify it actually zeroed
+        for (size_t i = 0; i < size; i++) {
+            if (buf[i] != 0) { r.passed = false; break; }
+        }
+        return r;
+    }
+
+    // Benchmark: XOR Block (SSE2)
+    Result benchXorBlock(int iterations) {
+        Result r{"xor_block (SSE2)", 16, iterations, 0, 0, 0, true};
+        alignas(16) uint8_t a[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+        alignas(16) uint8_t b[16] = {16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1};
+        alignas(16) uint8_t expected[16];
+        for (int i = 0; i < 16; i++) expected[i] = a[i] ^ b[i];
+        
+        Timer t;
+        t.begin();
+        for (int i = 0; i < iterations; i++) {
+            uint8_t tmp[16];
+            memcpy(tmp, a, 16);
+            xor_block(tmp, b);
+        }
+        r.totalMs = t.elapsedMs();
+        r.avgMs = r.totalMs / iterations;
+        r.throughputMBs = (16.0 * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
+        
+        // Verify correctness
+        uint8_t verify[16];
+        memcpy(verify, a, 16);
+        xor_block(verify, b);
+        r.passed = (constant_time_compare(verify, expected, 16) == 0);
+        return r;
+    }
+
+    // Benchmark: SHA-256 Hashing
+    Result benchSHA256(size_t size, int iterations) {
+        Result r{"SHA-256 hash", size, iterations, 0, 0, 0, true};
+        vector<unsigned char> data(size);
+        for (size_t i = 0; i < size; i++) data[i] = (unsigned char)(i & 0xFF);
+        
+        Timer t;
+        t.begin();
+        for (int i = 0; i < iterations; i++) {
+            auto hash = SHA256Impl::hash(data.data(), data.size());
+            (void)hash;  // Prevent optimization
+        }
+        r.totalMs = t.elapsedMs();
+        r.avgMs = r.totalMs / iterations;
+        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
+        return r;
+    }
+
+    // Benchmark: PBKDF2 Key Derivation
+    Result benchPBKDF2(int iterations_count, int runs) {
+        Result r{"PBKDF2-SHA256", 32, runs, 0, 0, 0, true};
+        unsigned char salt[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+        string password = "benchmark_password_123!";
+        
+        Timer t;
+        t.begin();
+        for (int i = 0; i < runs; i++) {
+            auto key = PBKDF2::derive(password, salt, 16, iterations_count, 32);
+            (void)key;
+        }
+        r.totalMs = t.elapsedMs();
+        r.avgMs = r.totalMs / runs;
+        r.dataSize = iterations_count;  // Store iteration count in dataSize
+        return r;
+    }
+
+    // Benchmark: AES-256 Block Encryption
+    Result benchAESBlock(int iterations) {
+        Result r{"AES-256 block", 16, iterations, 0, 0, 0, true};
+        unsigned char key[32];
+        for (int i = 0; i < 32; i++) key[i] = (unsigned char)i;
+        
+        AES256Impl::Context ctx;
+        ctx.keyExpansion(key);
+        
+        unsigned char block[16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
+        unsigned char original[16];
+        memcpy(original, block, 16);
+        
+        Timer t;
+        t.begin();
+        for (int i = 0; i < iterations; i++) {
+            ctx.encryptBlock(block);
+        }
+        r.totalMs = t.elapsedMs();
+        r.avgMs = r.totalMs / iterations;
+        r.throughputMBs = (16.0 * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
+        
+        // Verify encryption changed the block
+        r.passed = (constant_time_compare(block, original, 16) != 0);
+        return r;
+    }
+
+    // Benchmark: AES-256-CBC Full Encryption
+    Result benchAESCBC(size_t size, int iterations) {
+        Result r{"AES-256-CBC encrypt", size, iterations, 0, 0, 0, true};
+        vector<unsigned char> data(size);
+        for (size_t i = 0; i < size; i++) data[i] = (unsigned char)(i & 0xFF);
+        
+        AESCipher cipher;
+        string password = "BenchmarkPassword123!";
+        
+        Timer t;
+        t.begin();
+        for (int i = 0; i < iterations; i++) {
+            cipher.setKey(password);
+            auto enc = cipher.encrypt(data);
+            (void)enc;
+        }
+        r.totalMs = t.elapsedMs();
+        r.avgMs = r.totalMs / iterations;
+        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
+        return r;
+    }
+
+    // Benchmark: Constant-time Compare
+    Result benchConstantTimeCompare(size_t size, int iterations) {
+        Result r{"constant_time_compare", size, iterations, 0, 0, 0, true};
+        vector<unsigned char> a(size), b(size);
+        for (size_t i = 0; i < size; i++) { a[i] = (unsigned char)i; b[i] = (unsigned char)i; }
+        
+        Timer t;
+        t.begin();
+        for (int i = 0; i < iterations; i++) {
+            volatile int result = constant_time_compare(a.data(), b.data(), size);
+            (void)result;
+        }
+        r.totalMs = t.elapsedMs();
+        r.avgMs = r.totalMs / iterations;
+        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
+        
+        // Verify equal returns 0
+        r.passed = (constant_time_compare(a.data(), b.data(), size) == 0);
+        // Verify different returns non-zero
+        b[0] ^= 0xFF;
+        r.passed = r.passed && (constant_time_compare(a.data(), b.data(), size) != 0);
+        return r;
+    }
+
+    // Print single result
+    void printResult(const Result& r) {
+        const string GREEN = "\033[38;5;82m";
+        const string RED = "\033[38;5;196m";
+        const string CYAN = "\033[38;5;44m";
+        const string GRAY = "\033[38;5;245m";
+        const string WHITE = "\033[38;5;255m";
+        const string RESET = "\033[0m";
+        
+        cout << (r.passed ? GREEN + "✓" : RED + "✗") << RESET;
+        cout << WHITE << " " << left << setw(22) << r.name << RESET;
+        cout << GRAY << "  " << setw(12) << formatBytes(r.dataSize) << RESET;
+        cout << CYAN << "  " << setw(8) << r.iterations << " iters" << RESET;
+        cout << GRAY << "  " << setw(10) << fixed << setprecision(2) << r.avgMs << " ms/op" << RESET;
+        if (r.throughputMBs > 0) {
+            cout << GREEN << "  " << setw(12) << fixed << setprecision(2) << r.throughputMBs << " MB/s" << RESET;
+        }
+        cout << endl;
+    }
+
+    // Run all benchmarks
+    void runAll() {
+        const string ORANGE = "\033[38;5;208m";
+        const string GREEN = "\033[38;5;82m";
+        const string RED = "\033[38;5;196m";
+        const string CYAN = "\033[38;5;44m";
+        const string GRAY = "\033[38;5;245m";
+        const string WHITE = "\033[38;5;255m";
+        const string RESET = "\033[0m";
+        
+        cout << "\n" << ORANGE << "⏱ CRYPT VAULT BENCHMARK SUITE" << RESET << endl;
+        cout << GRAY << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << RESET << endl;
+        
+        // System info
+        checkHardwareCaps();
+        cout << WHITE << "\n  System Capabilities:" << RESET << endl;
+        cout << GRAY << "    AES-NI: " << (g_hasAESNI ? GREEN + string("Available") : RED + string("Not Available")) << RESET << endl;
+        cout << GRAY << "    SHA-NI: " << (g_hasSHANI ? GREEN + string("Available") : RED + string("Not Available")) << RESET << endl;
+        cout << endl;
+        
+        vector<Result> results;
+        int totalTests = 0, passedTests = 0;
+        
+        // === Memory Operations ===
+        cout << WHITE << "  ─── MEMORY OPERATIONS ───\n" << RESET << endl;
+        
+        results.push_back(benchSecureMemzero(1024, 10000));
+        printResult(results.back());
+        
+        results.push_back(benchSecureMemzero(1024 * 1024, 100));
+        printResult(results.back());
+        
+        results.push_back(benchConstantTimeCompare(256, 100000));
+        printResult(results.back());
+        
+        cout << endl;
+        
+        // === Block Operations ===
+        cout << WHITE << "  ─── BLOCK OPERATIONS (SSE2) ───\n" << RESET << endl;
+        
+        results.push_back(benchXorBlock(1000000));
+        printResult(results.back());
+        
+        results.push_back(benchAESBlock(100000));
+        printResult(results.back());
+        
+        cout << endl;
+        
+        // === Hashing ===
+        cout << WHITE << "  ─── SHA-256 HASHING ───\n" << RESET << endl;
+        
+        results.push_back(benchSHA256(1024, 10000));  // 1 KB
+        printResult(results.back());
+        
+        results.push_back(benchSHA256(64 * 1024, 1000));  // 64 KB
+        printResult(results.back());
+        
+        results.push_back(benchSHA256(1024 * 1024, 50));  // 1 MB
+        printResult(results.back());
+        
+        cout << endl;
+        
+        // === Key Derivation ===
+        cout << WHITE << "  ─── KEY DERIVATION ───\n" << RESET << endl;
+        
+        results.push_back(benchPBKDF2(1000, 10));  // 1K iterations
+        results.back().name = "PBKDF2 (1K iters)";
+        printResult(results.back());
+        
+        results.push_back(benchPBKDF2(10000, 5));  // 10K iterations
+        results.back().name = "PBKDF2 (10K iters)";
+        printResult(results.back());
+        
+        results.push_back(benchPBKDF2(100000, 1));  // 100K iterations (production)
+        results.back().name = "PBKDF2 (100K iters)";
+        printResult(results.back());
+        
+        cout << endl;
+        
+        // === Full Pipeline ===
+        cout << WHITE << "  ─── FULL ENCRYPTION PIPELINE ───\n" << RESET << endl;
+        cout << GRAY << "  (includes PBKDF2 + AES-256-CBC + padding)\n" << RESET << endl;
+        
+        results.push_back(benchAESCBC(1024, 3));  // 1 KB
+        printResult(results.back());
+        
+        results.push_back(benchAESCBC(64 * 1024, 2));  // 64 KB
+        printResult(results.back());
+        
+        results.push_back(benchAESCBC(1024 * 1024, 1));  // 1 MB
+        printResult(results.back());
+        
+        cout << endl;
+        
+        // === Summary ===
+        for (const auto& r : results) {
+            totalTests++;
+            if (r.passed) passedTests++;
+        }
+        
+        cout << GRAY << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << RESET << endl;
+        cout << WHITE << "  SUMMARY: " << RESET;
+        if (passedTests == totalTests) {
+            cout << GREEN << "✓ All " << totalTests << " tests passed" << RESET << endl;
+        } else {
+            cout << RED << "✗ " << passedTests << "/" << totalTests << " tests passed" << RESET << endl;
+        }
+        cout << endl;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // Application Class
 // ═══════════════════════════════════════════════════════════
 
@@ -831,7 +1164,7 @@ private:
         displayBanner();
 
         cout << GRAY << "  Type a " << CYAN << "number" << GRAY << " to select a command" << RESET << endl;
-        cout << GRAY << "  Press " << CYAN << "11" << GRAY << " to exit the application" << RESET << endl;
+        cout << GRAY << "  Press " << CYAN << "0" << GRAY << " to exit the application" << RESET << endl;
         cout << endl;
         cout << GREEN << "  →" << RESET << endl;
         cout << endl;
@@ -853,7 +1186,11 @@ private:
         cout << CYAN << "   8" << GRAY << "  stats      " << WHITE << "Show file statistics" << RESET << endl;
         cout << CYAN << "   9" << GRAY << "  hash       " << WHITE << "Calculate SHA-256 hash" << RESET << endl;
         cout << CYAN << "  10" << GRAY << "  about      " << WHITE << "About Crypt Vault" << RESET << endl;
-        cout << CYAN << "  11" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
+        cout << endl;
+
+        cout << WHITE << "  ─── DEVELOPER ─────────────────────────────────────────────" << RESET << endl;
+        cout << CYAN << "  11" << GRAY << "  benchmark  " << WHITE << "Run performance benchmarks" << RESET << endl;
+        cout << CYAN << "   0" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
         cout << endl;
         cout << GRAY << "  ─────────────────────────────────────────────────────────────" << RESET << endl;
         cout << endl;
@@ -1016,7 +1353,7 @@ public:
             }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-            if (choice == 11) { 
+            if (choice == 0) { 
                 cout << CYAN << "\n  ✓ Thank you for using Crypt Vault. Goodbye!\n" << RESET << endl;
                 break; 
             }
@@ -1104,8 +1441,12 @@ public:
 
                 case 10: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
+                case 11: // Benchmark
+                    Benchmark::runAll();
+                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+
                 default:
-                    cout << RED << "\n  ✗ Invalid choice! Please select 1-11." << RESET << endl;
+                    cout << RED << "\n  ✗ Invalid choice! Please select 0-11." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
             }
         }
