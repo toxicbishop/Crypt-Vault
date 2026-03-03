@@ -1,13 +1,12 @@
 /*
- * Crypt Vault — AES-256-CBC Encryption Tool (C++/ASM Hybrid)
+ * Crypt Vault — AES-256-CBC Encryption Tool (C++ Version)
  *
  * Features:
  * - AES-256-CBC file & text encryption/decryption
- * - PBKDF2-SHA256 key derivation (100,000 iterations + random salt)
+ * - SHA-256 password-based key derivation
  * - PKCS7 padding, random IV via Windows CryptoAPI
- * - Assembly/intrinsic-optimized cryptographic primitives
- * - Secure memory wiping, constant-time comparison
- * - Hardware capability detection (AES-NI, SHA-NI)
+ * - Batch processing, file stats, SHA-256 hashing
+ * - No external dependencies
  */
 
 #include <iostream>
@@ -21,137 +20,21 @@
 #include <ctime>
 #include <sys/stat.h>
 #include <algorithm>
-#include <cstdint>
-
-// SSE2 intrinsics for vectorized XOR
-#ifdef _MSC_VER
-#include <intrin.h>
-#else
-#include <x86intrin.h>
-#include <cpuid.h>
-#endif
 
 #ifdef _WIN32
 #include <windows.h>
 #include <wincrypt.h>
+#include <conio.h>  // For _getch() secure password input
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 #endif
 #else
 #include <cstdlib>
+#include <termios.h>
+#include <unistd.h>
 #endif
 
 using namespace std;
-
-// ═══════════════════════════════════════════════════════════
-// Assembly-Level Cryptographic Primitives (Intrinsics)
-// ═══════════════════════════════════════════════════════════
-
-// Secure memory wipe - prevents compiler from optimizing away
-// Uses volatile to ensure the operation cannot be elided
-static void secure_memzero(void* ptr, size_t len) {
-    volatile unsigned char* p = (volatile unsigned char*)ptr;
-    while (len--) {
-        *p++ = 0;
-    }
-    // Memory barrier to prevent reordering
-    #ifdef _MSC_VER
-    _ReadWriteBarrier();
-    #else
-    __asm__ __volatile__("" ::: "memory");
-    #endif
-}
-
-// XOR two 16-byte blocks using SSE2 (vectorized, single instruction)
-static inline void xor_block(uint8_t* dest, const uint8_t* src) {
-    __m128i a = _mm_loadu_si128((__m128i*)dest);
-    __m128i b = _mm_loadu_si128((__m128i*)src);
-    __m128i result = _mm_xor_si128(a, b);
-    _mm_storeu_si128((__m128i*)dest, result);
-}
-
-// CPUID check for AES-NI support
-static int check_aes_support() {
-#ifdef _MSC_VER
-    int cpuInfo[4];
-    __cpuid(cpuInfo, 1);
-    return (cpuInfo[2] & (1 << 25)) != 0;
-#else
-    unsigned int eax, ebx, ecx, edx;
-    if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
-        return (ecx & (1 << 25)) != 0;
-    }
-    return 0;
-#endif
-}
-
-// CPUID check for SHA-NI support  
-static int check_sha_support() {
-#ifdef _MSC_VER
-    int cpuInfo[4];
-    __cpuidex(cpuInfo, 7, 0);
-    return (cpuInfo[1] & (1 << 29)) != 0;
-#else
-    unsigned int eax, ebx, ecx, edx;
-    if (__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
-        return (ebx & (1 << 29)) != 0;
-    }
-    return 0;
-#endif
-}
-
-// Constant-time memory comparison (prevents timing attacks)
-static int constant_time_compare(const void* a, const void* b, size_t len) {
-    const volatile unsigned char* pa = (const volatile unsigned char*)a;
-    const volatile unsigned char* pb = (const volatile unsigned char*)b;
-    unsigned char diff = 0;
-    while (len--) {
-        diff |= *pa++ ^ *pb++;
-    }
-    return diff;
-}
-
-// Single SHA-256 round (inline for performance)
-static inline void sha256_round(uint32_t* state, uint32_t k, uint32_t w) {
-    uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
-    uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
-    
-    // Σ1(e) = ROTR(e,6) ^ ROTR(e,11) ^ ROTR(e,25)
-    uint32_t S1 = ((e >> 6) | (e << 26)) ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7));
-    // Ch(e,f,g) = (e & f) ^ (~e & g)
-    uint32_t ch = (e & f) ^ (~e & g);
-    // T1 = h + Σ1(e) + Ch(e,f,g) + k + w
-    uint32_t T1 = h + S1 + ch + k + w;
-    
-    // Σ0(a) = ROTR(a,2) ^ ROTR(a,13) ^ ROTR(a,22)
-    uint32_t S0 = ((a >> 2) | (a << 30)) ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10));
-    // Maj(a,b,c) = (a & b) ^ (a & c) ^ (b & c)
-    uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
-    // T2 = Σ0(a) + Maj(a,b,c)
-    uint32_t T2 = S0 + maj;
-    
-    state[7] = g;
-    state[6] = f;
-    state[5] = e;
-    state[4] = d + T1;
-    state[3] = c;
-    state[2] = b;
-    state[1] = a;
-    state[0] = T1 + T2;
-}
-
-// Global hardware capability flags
-static bool g_hasAESNI = false;
-static bool g_hasSHANI = false;
-static bool g_capsChecked = false;
-
-static void checkHardwareCaps() {
-    if (!g_capsChecked) {
-        g_hasAESNI = (check_aes_support() != 0);
-        g_hasSHANI = (check_sha_support() != 0);
-        g_capsChecked = true;
-    }
-}
 
 // ═══════════════════════════════════════════════════════════
 // SHA-256 Implementation
@@ -223,96 +106,6 @@ namespace SHA256Impl {
         stringstream ss;
         for (auto b : h) ss << hex << setfill('0') << setw(2) << (int)b;
         return ss.str();
-    }
-}
-
-// ═══════════════════════════════════════════════════════════
-// HMAC-SHA256 Implementation
-// ═══════════════════════════════════════════════════════════
-
-namespace HMAC_SHA256 {
-    vector<unsigned char> compute(const unsigned char* key, size_t keyLen,
-                                   const unsigned char* data, size_t dataLen) {
-        const size_t blockSize = 64;
-        unsigned char keyBlock[blockSize];
-        memset(keyBlock, 0, blockSize);
-
-        // If key > blockSize, hash it first
-        if (keyLen > blockSize) {
-            auto hashedKey = SHA256Impl::hash(key, keyLen);
-            memcpy(keyBlock, hashedKey.data(), 32);
-        } else {
-            memcpy(keyBlock, key, keyLen);
-        }
-
-        // Create inner and outer padded keys
-        unsigned char ipad[blockSize], opad[blockSize];
-        for (size_t i = 0; i < blockSize; i++) {
-            ipad[i] = keyBlock[i] ^ 0x36;
-            opad[i] = keyBlock[i] ^ 0x5c;
-        }
-
-        // Inner hash: H(ipad || data)
-        vector<unsigned char> innerData(blockSize + dataLen);
-        memcpy(innerData.data(), ipad, blockSize);
-        memcpy(innerData.data() + blockSize, data, dataLen);
-        auto innerHash = SHA256Impl::hash(innerData.data(), innerData.size());
-
-        // Outer hash: H(opad || innerHash)
-        vector<unsigned char> outerData(blockSize + 32);
-        memcpy(outerData.data(), opad, blockSize);
-        memcpy(outerData.data() + blockSize, innerHash.data(), 32);
-        return SHA256Impl::hash(outerData.data(), outerData.size());
-    }
-}
-
-// ═══════════════════════════════════════════════════════════
-// PBKDF2-SHA256 Implementation
-// ═══════════════════════════════════════════════════════════
-
-namespace PBKDF2 {
-    const int DEFAULT_ITERATIONS = 100000;
-    const int SALT_SIZE = 16;
-
-    vector<unsigned char> derive(const string& password, const unsigned char* salt,
-                                  size_t saltLen, int iterations, size_t dkLen) {
-        vector<unsigned char> dk;
-        dk.reserve(dkLen);
-
-        size_t hLen = 32; // SHA-256 output size
-        size_t numBlocks = (dkLen + hLen - 1) / hLen;
-
-        for (size_t blockNum = 1; blockNum <= numBlocks; blockNum++) {
-            // U1 = PRF(Password, Salt || INT_32_BE(i))
-            vector<unsigned char> saltBlock(saltLen + 4);
-            memcpy(saltBlock.data(), salt, saltLen);
-            saltBlock[saltLen]     = (blockNum >> 24) & 0xff;
-            saltBlock[saltLen + 1] = (blockNum >> 16) & 0xff;
-            saltBlock[saltLen + 2] = (blockNum >> 8) & 0xff;
-            saltBlock[saltLen + 3] = blockNum & 0xff;
-
-            auto U = HMAC_SHA256::compute(
-                (const unsigned char*)password.data(), password.size(),
-                saltBlock.data(), saltBlock.size());
-
-            vector<unsigned char> T = U; // T = U1
-
-            // T ^= U2 ^ U3 ^ ... ^ Uc
-            for (int iter = 1; iter < iterations; iter++) {
-                U = HMAC_SHA256::compute(
-                    (const unsigned char*)password.data(), password.size(),
-                    U.data(), U.size());
-                for (size_t j = 0; j < hLen; j++) {
-                    T[j] ^= U[j];
-                }
-            }
-
-            // Append T to derived key
-            for (size_t j = 0; j < hLen && dk.size() < dkLen; j++) {
-                dk.push_back(T[j]);
-            }
-        }
-        return dk;
     }
 }
 
@@ -632,7 +425,6 @@ void pbkdf2_sha256(const string& password, const unsigned char* salt, size_t sal
 
 class AESCipher {
 private:
-<<<<<<< HEAD
     string storedPassword;
     unsigned char encKey[32];
     unsigned char authKey[32];
@@ -662,53 +454,11 @@ private:
     bool verifyHMAC(const unsigned char* data, size_t dataLen, const unsigned char* expectedHmac) {
         auto computed = computeHMAC(data, dataLen);
         return constant_time_compare(computed.data(), expectedHmac, HMAC_SIZE);
-=======
-    unsigned char key[32];
-    unsigned char currentSalt[PBKDF2::SALT_SIZE];
-    AES256Impl::Context ctx;
-    bool keyFromSalt = false;
-
-    void deriveKeyFromSalt(const string& password, const unsigned char* salt) {
-        auto derived = PBKDF2::derive(password, salt, PBKDF2::SALT_SIZE,
-                                       PBKDF2::DEFAULT_ITERATIONS, 32);
-        memcpy(key, derived.data(), 32);
-        memcpy(currentSalt, salt, PBKDF2::SALT_SIZE);
-        ctx.keyExpansion(key);
-        // Securely wipe derived key buffer
-        secure_memzero(derived.data(), derived.size());
->>>>>>> 047b5e4e722c960f9a3454e6d648784ab0757150
     }
 
 public:
-    AESCipher() {
-        secure_memzero(key, sizeof(key));
-        secure_memzero(currentSalt, sizeof(currentSalt));
-    }
-
-    ~AESCipher() {
-        // Securely wipe all sensitive data on destruction
-        secure_memzero(key, sizeof(key));
-        secure_memzero(currentSalt, sizeof(currentSalt));
-        secure_memzero(&ctx, sizeof(ctx));
-    }
-
     void setKey(const string& password) {
-<<<<<<< HEAD
         storedPassword = password;
-=======
-        // Generate random salt for encryption
-        if (!generateRandomBytes(currentSalt, PBKDF2::SALT_SIZE)) {
-            cerr << "Error: Could not generate random salt" << endl;
-            return;
-        }
-        deriveKeyFromSalt(password, currentSalt);
-        keyFromSalt = false;
-    }
-
-    void setKeyWithSalt(const string& password, const unsigned char* salt) {
-        deriveKeyFromSalt(password, salt);
-        keyFromSalt = true;
->>>>>>> 047b5e4e722c960f9a3454e6d648784ab0757150
     }
 
     vector<unsigned char> encrypt(const vector<unsigned char>& plaintext) {
@@ -720,7 +470,6 @@ public:
             return {};
         }
 
-<<<<<<< HEAD
         // Derive keys from password + salt
         deriveKeys(salt);
 
@@ -733,23 +482,15 @@ public:
         result.insert(result.end(), iv, iv + IV_SIZE);
 
         // CBC encrypt
-=======
-        // Prepend salt + IV to result
-        vector<unsigned char> result;
-        result.insert(result.end(), currentSalt, currentSalt + PBKDF2::SALT_SIZE);
-        result.insert(result.end(), iv, iv + 16);
->>>>>>> 047b5e4e722c960f9a3454e6d648784ab0757150
         unsigned char prev[16];
         memcpy(prev, iv, 16);
         for (size_t i = 0; i < padded.size(); i += 16) {
             unsigned char block[16];
-            memcpy(block, &padded[i], 16);
-            xor_block(block, prev);  // ASM: block ^= prev
+            for (int j = 0; j < 16; j++) block[j] = padded[i+j] ^ prev[j];
             ctx.encryptBlock(block);
             result.insert(result.end(), block, block + 16);
             memcpy(prev, block, 16);
         }
-<<<<<<< HEAD
 
         // Compute and append HMAC over salt + iv + ciphertext
         auto hmac = computeHMAC(result.data(), result.size());
@@ -775,28 +516,6 @@ public:
         const unsigned char* encData = ciphertext.data() + SALT_SIZE + IV_SIZE;
         const unsigned char* hmac = ciphertext.data() + dataLen;
         size_t encLen = dataLen - SALT_SIZE - IV_SIZE;
-=======
-        
-        // Secure cleanup
-        secure_memzero(iv, sizeof(iv));
-        secure_memzero(prev, sizeof(prev));
-        return result;
-    }
-
-    vector<unsigned char> decrypt(const vector<unsigned char>& ciphertext, const string& password = "") {
-        // Format: salt(16) + iv(16) + ciphertext (must be multiple of 16)
-        if (ciphertext.size() < 48 || (ciphertext.size() - 32) % 16 != 0) return {};
-
-        // Extract salt and derive key if password provided
-        const unsigned char* salt = ciphertext.data();
-        if (!password.empty()) {
-            deriveKeyFromSalt(password, salt);
-        }
-
-        // Extract IV (after salt)
-        unsigned char prev[16];
-        memcpy(prev, ciphertext.data() + PBKDF2::SALT_SIZE, 16);
->>>>>>> 047b5e4e722c960f9a3454e6d648784ab0757150
 
         // Derive keys from password + salt
         deriveKeys(salt);
@@ -809,38 +528,30 @@ public:
 
         // CBC decrypt
         vector<unsigned char> result;
-<<<<<<< HEAD
         unsigned char prev[16];
         memcpy(prev, iv, 16);
 
         for (size_t i = 0; i < encLen; i += 16) {
-=======
-        for (size_t i = PBKDF2::SALT_SIZE + 16; i < ciphertext.size(); i += 16) {
->>>>>>> 047b5e4e722c960f9a3454e6d648784ab0757150
             unsigned char block[16];
             memcpy(block, encData + i, 16);
             unsigned char enc[16];
             memcpy(enc, block, 16);
             ctx.decryptBlock(block);
-            xor_block(block, prev);  // ASM: block ^= prev
+            for (int j = 0; j < 16; j++) block[j] ^= prev[j];
             result.insert(result.end(), block, block + 16);
             memcpy(prev, enc, 16);
         }
-        
-        // Secure cleanup
-        secure_memzero(prev, sizeof(prev));
 
         if (!pkcs7Unpad(result)) return {};
         return result;
     }
 
-    bool encryptFile(const string& inputFile, const string& outputFile, const string& password) {
+    bool encryptFile(const string& inputFile, const string& outputFile) {
         ifstream in(inputFile, ios::binary);
         if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
         vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
         in.close();
 
-        setKey(password); // Generate new salt
         auto enc = encrypt(data);
         if (enc.empty()) { cerr << "\n❌ Encryption failed" << endl; return false; }
 
@@ -851,13 +562,13 @@ public:
         return true;
     }
 
-    bool decryptFile(const string& inputFile, const string& outputFile, const string& password) {
+    bool decryptFile(const string& inputFile, const string& outputFile) {
         ifstream in(inputFile, ios::binary);
         if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
         vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
         in.close();
 
-        auto dec = decrypt(data, password); // Extract salt from file and derive key
+        auto dec = decrypt(data);
         if (dec.empty()) { cerr << "\n❌ Decryption failed (wrong password or corrupt file)" << endl; return false; }
 
         ofstream out(outputFile, ios::binary);
@@ -867,16 +578,15 @@ public:
         return true;
     }
 
-    string encryptText(const string& text, const string& password) {
-        setKey(password); // Generate new salt
+    string encryptText(const string& text) {
         vector<unsigned char> data(text.begin(), text.end());
         auto enc = encrypt(data);
         return bytesToHex(enc.data(), enc.size());
     }
 
-    string decryptText(const string& hexCipher, const string& password) {
+    string decryptText(const string& hexCipher) {
         auto data = hexToBytes(hexCipher);
-        auto dec = decrypt(data, password); // Extract salt from data
+        auto dec = decrypt(data);
         if (dec.empty()) return "";
         return string(dec.begin(), dec.end());
     }
@@ -941,339 +651,6 @@ public:
 };
 
 // ═══════════════════════════════════════════════════════════
-// Benchmark Framework
-// ═══════════════════════════════════════════════════════════
-
-namespace Benchmark {
-    // High-resolution timer
-    struct Timer {
-        clock_t start;
-        void begin() { start = clock(); }
-        double elapsedMs() { return (double)(clock() - start) * 1000.0 / CLOCKS_PER_SEC; }
-        double elapsedSec() { return (double)(clock() - start) / CLOCKS_PER_SEC; }
-    };
-
-    // Format bytes to human readable
-    string formatBytes(size_t bytes) {
-        const char* units[] = {"B", "KB", "MB", "GB"};
-        int unit = 0;
-        double size = (double)bytes;
-        while (size >= 1024 && unit < 3) { size /= 1024; unit++; }
-        stringstream ss;
-        ss << fixed << setprecision(2) << size << " " << units[unit];
-        return ss.str();
-    }
-
-    // Format throughput
-    string formatThroughput(size_t bytes, double seconds) {
-        if (seconds <= 0) return "N/A";
-        double mbps = (bytes / (1024.0 * 1024.0)) / seconds;
-        stringstream ss;
-        ss << fixed << setprecision(2) << mbps << " MB/s";
-        return ss.str();
-    }
-
-    // Result structure
-    struct Result {
-        string name;
-        size_t dataSize;
-        int iterations;
-        double totalMs;
-        double avgMs;
-        double throughputMBs;
-        bool passed;
-    };
-
-    // Benchmark: Memory Operations
-    Result benchSecureMemzero(size_t size, int iterations) {
-        Result r{"secure_memzero", size, iterations, 0, 0, 0, true};
-        vector<unsigned char> buf(size);
-        
-        Timer t;
-        t.begin();
-        for (int i = 0; i < iterations; i++) {
-            memset(buf.data(), 0xAA, size);  // Fill with pattern
-            secure_memzero(buf.data(), size);
-        }
-        r.totalMs = t.elapsedMs();
-        r.avgMs = r.totalMs / iterations;
-        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
-        
-        // Verify it actually zeroed
-        for (size_t i = 0; i < size; i++) {
-            if (buf[i] != 0) { r.passed = false; break; }
-        }
-        return r;
-    }
-
-    // Benchmark: XOR Block (SSE2)
-    Result benchXorBlock(int iterations) {
-        Result r{"xor_block (SSE2)", 16, iterations, 0, 0, 0, true};
-        alignas(16) uint8_t a[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
-        alignas(16) uint8_t b[16] = {16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1};
-        alignas(16) uint8_t expected[16];
-        for (int i = 0; i < 16; i++) expected[i] = a[i] ^ b[i];
-        
-        Timer t;
-        t.begin();
-        for (int i = 0; i < iterations; i++) {
-            uint8_t tmp[16];
-            memcpy(tmp, a, 16);
-            xor_block(tmp, b);
-        }
-        r.totalMs = t.elapsedMs();
-        r.avgMs = r.totalMs / iterations;
-        r.throughputMBs = (16.0 * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
-        
-        // Verify correctness
-        uint8_t verify[16];
-        memcpy(verify, a, 16);
-        xor_block(verify, b);
-        r.passed = (constant_time_compare(verify, expected, 16) == 0);
-        return r;
-    }
-
-    // Benchmark: SHA-256 Hashing
-    Result benchSHA256(size_t size, int iterations) {
-        Result r{"SHA-256 hash", size, iterations, 0, 0, 0, true};
-        vector<unsigned char> data(size);
-        for (size_t i = 0; i < size; i++) data[i] = (unsigned char)(i & 0xFF);
-        
-        Timer t;
-        t.begin();
-        for (int i = 0; i < iterations; i++) {
-            auto hash = SHA256Impl::hash(data.data(), data.size());
-            (void)hash;  // Prevent optimization
-        }
-        r.totalMs = t.elapsedMs();
-        r.avgMs = r.totalMs / iterations;
-        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
-        return r;
-    }
-
-    // Benchmark: PBKDF2 Key Derivation
-    Result benchPBKDF2(int iterations_count, int runs) {
-        Result r{"PBKDF2-SHA256", 32, runs, 0, 0, 0, true};
-        unsigned char salt[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
-        string password = "benchmark_password_123!";
-        
-        Timer t;
-        t.begin();
-        for (int i = 0; i < runs; i++) {
-            auto key = PBKDF2::derive(password, salt, 16, iterations_count, 32);
-            (void)key;
-        }
-        r.totalMs = t.elapsedMs();
-        r.avgMs = r.totalMs / runs;
-        r.dataSize = iterations_count;  // Store iteration count in dataSize
-        return r;
-    }
-
-    // Benchmark: AES-256 Block Encryption
-    Result benchAESBlock(int iterations) {
-        Result r{"AES-256 block", 16, iterations, 0, 0, 0, true};
-        unsigned char key[32];
-        for (int i = 0; i < 32; i++) key[i] = (unsigned char)i;
-        
-        AES256Impl::Context ctx;
-        ctx.keyExpansion(key);
-        
-        unsigned char block[16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
-        unsigned char original[16];
-        memcpy(original, block, 16);
-        
-        Timer t;
-        t.begin();
-        for (int i = 0; i < iterations; i++) {
-            ctx.encryptBlock(block);
-        }
-        r.totalMs = t.elapsedMs();
-        r.avgMs = r.totalMs / iterations;
-        r.throughputMBs = (16.0 * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
-        
-        // Verify encryption changed the block
-        r.passed = (constant_time_compare(block, original, 16) != 0);
-        return r;
-    }
-
-    // Benchmark: AES-256-CBC Full Encryption
-    Result benchAESCBC(size_t size, int iterations) {
-        Result r{"AES-256-CBC encrypt", size, iterations, 0, 0, 0, true};
-        vector<unsigned char> data(size);
-        for (size_t i = 0; i < size; i++) data[i] = (unsigned char)(i & 0xFF);
-        
-        AESCipher cipher;
-        string password = "BenchmarkPassword123!";
-        
-        Timer t;
-        t.begin();
-        for (int i = 0; i < iterations; i++) {
-            cipher.setKey(password);
-            auto enc = cipher.encrypt(data);
-            (void)enc;
-        }
-        r.totalMs = t.elapsedMs();
-        r.avgMs = r.totalMs / iterations;
-        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
-        return r;
-    }
-
-    // Benchmark: Constant-time Compare
-    Result benchConstantTimeCompare(size_t size, int iterations) {
-        Result r{"constant_time_compare", size, iterations, 0, 0, 0, true};
-        vector<unsigned char> a(size), b(size);
-        for (size_t i = 0; i < size; i++) { a[i] = (unsigned char)i; b[i] = (unsigned char)i; }
-        
-        Timer t;
-        t.begin();
-        for (int i = 0; i < iterations; i++) {
-            volatile int result = constant_time_compare(a.data(), b.data(), size);
-            (void)result;
-        }
-        r.totalMs = t.elapsedMs();
-        r.avgMs = r.totalMs / iterations;
-        r.throughputMBs = (size * iterations / (1024.0 * 1024.0)) / (r.totalMs / 1000.0);
-        
-        // Verify equal returns 0
-        r.passed = (constant_time_compare(a.data(), b.data(), size) == 0);
-        // Verify different returns non-zero
-        b[0] ^= 0xFF;
-        r.passed = r.passed && (constant_time_compare(a.data(), b.data(), size) != 0);
-        return r;
-    }
-
-    // Print single result
-    void printResult(const Result& r) {
-        const string GREEN = "\033[38;5;82m";
-        const string RED = "\033[38;5;196m";
-        const string CYAN = "\033[38;5;44m";
-        const string GRAY = "\033[38;5;245m";
-        const string WHITE = "\033[38;5;255m";
-        const string RESET = "\033[0m";
-        
-        cout << (r.passed ? GREEN + "✓" : RED + "✗") << RESET;
-        cout << WHITE << " " << left << setw(22) << r.name << RESET;
-        cout << GRAY << "  " << setw(12) << formatBytes(r.dataSize) << RESET;
-        cout << CYAN << "  " << setw(8) << r.iterations << " iters" << RESET;
-        cout << GRAY << "  " << setw(10) << fixed << setprecision(2) << r.avgMs << " ms/op" << RESET;
-        if (r.throughputMBs > 0) {
-            cout << GREEN << "  " << setw(12) << fixed << setprecision(2) << r.throughputMBs << " MB/s" << RESET;
-        }
-        cout << endl;
-    }
-
-    // Run all benchmarks
-    void runAll() {
-        const string ORANGE = "\033[38;5;208m";
-        const string GREEN = "\033[38;5;82m";
-        const string RED = "\033[38;5;196m";
-        const string CYAN = "\033[38;5;44m";
-        const string GRAY = "\033[38;5;245m";
-        const string WHITE = "\033[38;5;255m";
-        const string RESET = "\033[0m";
-        
-        cout << "\n" << ORANGE << "⏱ CRYPT VAULT BENCHMARK SUITE" << RESET << endl;
-        cout << GRAY << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << RESET << endl;
-        
-        // System info
-        checkHardwareCaps();
-        cout << WHITE << "\n  System Capabilities:" << RESET << endl;
-        cout << GRAY << "    AES-NI: " << (g_hasAESNI ? GREEN + string("Available") : RED + string("Not Available")) << RESET << endl;
-        cout << GRAY << "    SHA-NI: " << (g_hasSHANI ? GREEN + string("Available") : RED + string("Not Available")) << RESET << endl;
-        cout << endl;
-        
-        vector<Result> results;
-        int totalTests = 0, passedTests = 0;
-        
-        // === Memory Operations ===
-        cout << WHITE << "  ─── MEMORY OPERATIONS ───\n" << RESET << endl;
-        
-        results.push_back(benchSecureMemzero(1024, 10000));
-        printResult(results.back());
-        
-        results.push_back(benchSecureMemzero(1024 * 1024, 100));
-        printResult(results.back());
-        
-        results.push_back(benchConstantTimeCompare(256, 100000));
-        printResult(results.back());
-        
-        cout << endl;
-        
-        // === Block Operations ===
-        cout << WHITE << "  ─── BLOCK OPERATIONS (SSE2) ───\n" << RESET << endl;
-        
-        results.push_back(benchXorBlock(1000000));
-        printResult(results.back());
-        
-        results.push_back(benchAESBlock(100000));
-        printResult(results.back());
-        
-        cout << endl;
-        
-        // === Hashing ===
-        cout << WHITE << "  ─── SHA-256 HASHING ───\n" << RESET << endl;
-        
-        results.push_back(benchSHA256(1024, 10000));  // 1 KB
-        printResult(results.back());
-        
-        results.push_back(benchSHA256(64 * 1024, 1000));  // 64 KB
-        printResult(results.back());
-        
-        results.push_back(benchSHA256(1024 * 1024, 50));  // 1 MB
-        printResult(results.back());
-        
-        cout << endl;
-        
-        // === Key Derivation ===
-        cout << WHITE << "  ─── KEY DERIVATION ───\n" << RESET << endl;
-        
-        results.push_back(benchPBKDF2(1000, 10));  // 1K iterations
-        results.back().name = "PBKDF2 (1K iters)";
-        printResult(results.back());
-        
-        results.push_back(benchPBKDF2(10000, 5));  // 10K iterations
-        results.back().name = "PBKDF2 (10K iters)";
-        printResult(results.back());
-        
-        results.push_back(benchPBKDF2(100000, 1));  // 100K iterations (production)
-        results.back().name = "PBKDF2 (100K iters)";
-        printResult(results.back());
-        
-        cout << endl;
-        
-        // === Full Pipeline ===
-        cout << WHITE << "  ─── FULL ENCRYPTION PIPELINE ───\n" << RESET << endl;
-        cout << GRAY << "  (includes PBKDF2 + AES-256-CBC + padding)\n" << RESET << endl;
-        
-        results.push_back(benchAESCBC(1024, 3));  // 1 KB
-        printResult(results.back());
-        
-        results.push_back(benchAESCBC(64 * 1024, 2));  // 64 KB
-        printResult(results.back());
-        
-        results.push_back(benchAESCBC(1024 * 1024, 1));  // 1 MB
-        printResult(results.back());
-        
-        cout << endl;
-        
-        // === Summary ===
-        for (const auto& r : results) {
-            totalTests++;
-            if (r.passed) passedTests++;
-        }
-        
-        cout << GRAY << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << RESET << endl;
-        cout << WHITE << "  SUMMARY: " << RESET;
-        if (passedTests == totalTests) {
-            cout << GREEN << "✓ All " << totalTests << " tests passed" << RESET << endl;
-        } else {
-            cout << RED << "✗ " << passedTests << "/" << totalTests << " tests passed" << RESET << endl;
-        }
-        cout << endl;
-    }
-}
-
-// ═══════════════════════════════════════════════════════════
 // Application Class
 // ═══════════════════════════════════════════════════════════
 
@@ -1312,8 +689,6 @@ private:
         const string ORANGE = "\033[38;5;208m";
         const string GRAY = "\033[38;5;245m";
         const string CYAN = "\033[38;5;44m";
-        const string GREEN = "\033[38;5;82m";
-        const string RED = "\033[38;5;196m";
         const string RESET = "\033[0m";
         const string BOLD = "\033[1m";
 
@@ -1326,15 +701,8 @@ private:
   ╚██████╗██║  ██║   ██║   ██║        ██║        ╚████╔╝ ██║  ██║╚██████╔╝███████╗██║   
    ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═╝        ╚═╝         ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝   
 )" << RESET << endl;
-        cout << GRAY << "                  AES-256-CBC Encryption Tool • C++/ASM Hybrid Engine" << RESET << endl;
-        cout << GRAY << "             PBKDF2-SHA256 • Secure Memory Wipe • Hardware Acceleration" << RESET << endl;
-        cout << endl;
-        
-        // Display hardware capabilities
-        checkHardwareCaps();
-        cout << GRAY << "  Hardware: " << RESET;
-        cout << "AES-NI " << (g_hasAESNI ? GREEN + string("✓") : RED + string("✗")) << RESET << "  ";
-        cout << "SHA-NI " << (g_hasSHANI ? GREEN + string("✓") : RED + string("✗")) << RESET << endl;
+        cout << GRAY << "                    AES-256-CBC Encryption Tool • Secure File Protection" << RESET << endl;
+        cout << GRAY << "             SHA-256 Key Derivation • PKCS7 Padding • Windows CryptoAPI" << RESET << endl;
         cout << endl;
     }
 
@@ -1350,7 +718,7 @@ private:
         displayBanner();
 
         cout << GRAY << "  Type a " << CYAN << "number" << GRAY << " to select a command" << RESET << endl;
-        cout << GRAY << "  Press " << CYAN << "0" << GRAY << " to exit the application" << RESET << endl;
+        cout << GRAY << "  Press " << CYAN << "11" << GRAY << " to exit the application" << RESET << endl;
         cout << endl;
         cout << GREEN << "  →" << RESET << endl;
         cout << endl;
@@ -1372,20 +740,59 @@ private:
         cout << CYAN << "   8" << GRAY << "  stats      " << WHITE << "Show file statistics" << RESET << endl;
         cout << CYAN << "   9" << GRAY << "  hash       " << WHITE << "Calculate SHA-256 hash" << RESET << endl;
         cout << CYAN << "  10" << GRAY << "  about      " << WHITE << "About Crypt Vault" << RESET << endl;
-        cout << endl;
-
-        cout << WHITE << "  ─── DEVELOPER ─────────────────────────────────────────────" << RESET << endl;
-        cout << CYAN << "  11" << GRAY << "  benchmark  " << WHITE << "Run performance benchmarks" << RESET << endl;
-        cout << CYAN << "   0" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
+        cout << CYAN << "  11" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
         cout << endl;
         cout << GRAY << "  ─────────────────────────────────────────────────────────────" << RESET << endl;
         cout << endl;
     }
 
+    // Secure password input - masks characters with asterisks
+    string getSecureInput() {
+        string input;
+#ifdef _WIN32
+        char ch;
+        while ((ch = _getch()) != '\r' && ch != '\n') {
+            if (ch == '\b' || ch == 127) {  // Backspace
+                if (!input.empty()) {
+                    input.pop_back();
+                    cout << "\b \b" << flush;  // Erase asterisk
+                }
+            } else if (ch >= 32) {  // Printable characters
+                input += ch;
+                cout << '*' << flush;
+            }
+        }
+        cout << endl;
+#else
+        // POSIX: disable echo
+        struct termios oldt, newt;
+        tcgetattr(STDIN_FILENO, &oldt);
+        newt = oldt;
+        newt.c_lflag &= ~(ECHO | ICANON);
+        tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+        
+        char ch;
+        while (read(STDIN_FILENO, &ch, 1) == 1 && ch != '\n' && ch != '\r') {
+            if (ch == 127 || ch == '\b') {  // Backspace
+                if (!input.empty()) {
+                    input.pop_back();
+                    cout << "\b \b" << flush;
+                }
+            } else if (ch >= 32) {
+                input += ch;
+                cout << '*' << flush;
+            }
+        }
+        cout << endl;
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldt);  // Restore terminal
+#endif
+        return input;
+    }
+
     string getPassword(const string& prompt = "Enter password: ") {
-        string password;
-        cout << prompt;
-        getLineTrim(password);
+        cout << prompt << flush;
+        string password = getSecureInput();
+        
         if (password.empty()) { cout << "❌ Password cannot be empty." << endl; return ""; }
 
         // Password strength indicator
@@ -1425,6 +832,7 @@ private:
 
         string pw = getPassword();
         if (pw.empty()) return;
+        cipher.setKey(pw);
 
         vector<string> files(numFiles);
         for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
@@ -1434,7 +842,7 @@ private:
         for (const auto& f : files) {
             if (FileHelper::fileExists(f)) {
                 clock_t t = clock();
-                if (cipher.encryptFile(f, FileHelper::addEncExtension(f), pw)) {
+                if (cipher.encryptFile(f, FileHelper::addEncExtension(f))) {
                     cout << "✅ " << f << " → " << FileHelper::addEncExtension(f)
                          << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
                     ok++;
@@ -1457,6 +865,7 @@ private:
 
         string pw = getPassword();
         if (pw.empty()) return;
+        cipher.setKey(pw);
 
         vector<string> files(numFiles);
         for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
@@ -1467,7 +876,7 @@ private:
             string outF = FileHelper::hasEncExtension(f) ? FileHelper::removeEncExtension(f) : "decrypted_" + f;
             if (FileHelper::fileExists(f)) {
                 clock_t t = clock();
-                if (cipher.decryptFile(f, outF, pw)) {
+                if (cipher.decryptFile(f, outF)) {
                     cout << "✅ " << f << " → " << outF
                          << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
                     ok++;
@@ -1478,39 +887,21 @@ private:
     }
 
     void showAbout() {
-        const string GREEN = "\033[38;5;82m";
-        const string RED = "\033[38;5;196m";
-        const string RESET = "\033[0m";
-        
         cout << "\n📚 ABOUT CRYPT VAULT" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
         cout << "\nCrypt Vault uses AES-256-CBC, an industry-standard" << endl;
         cout << "symmetric encryption algorithm used by governments" << endl;
         cout << "and financial institutions worldwide." << endl << endl;
-        cout << "🔧 Architecture: C++/ASM Hybrid" << endl;
-        cout << "  Assembly routines for cryptographic primitives:" << endl;
-        cout << "  • Secure memory wipe (prevents compiler optimization)" << endl;
-        cout << "  • XOR block operations (SSE2 vectorized)" << endl;
-        cout << "  • CPUID hardware detection" << endl;
-        cout << "  • SHA-256 round function" << endl;
-        cout << "  • Constant-time memory comparison" << endl << endl;
         cout << "🔑 How it works:" << endl;
-        cout << "  1. PBKDF2-SHA256 derives a 256-bit key from your password" << endl;
-        cout << "     (100,000 iterations + random 16-byte salt)" << endl;
+        cout << "  1. Your password is hashed via SHA-256 → 256-bit key" << endl;
         cout << "  2. A random 16-byte IV is generated per encryption" << endl;
         cout << "  3. Data is padded (PKCS7) and encrypted in CBC mode" << endl;
-        cout << "  4. Salt + IV are prepended to the ciphertext" << endl << endl;
+        cout << "  4. IV is prepended to the ciphertext (not secret)" << endl << endl;
         cout << "✅ Security features:" << endl;
-        cout << "  • PBKDF2: makes brute-force attacks 100,000x slower" << endl;
-        cout << "  • Secure memory wipe: keys erased after use (ASM)" << endl;
-        cout << "  • Random salt: same password encrypts differently" << endl;
-        cout << "  • AES-256: 2^256 possible keys (unbreakable)" << endl;
+        cout << "  • AES-256: 2^256 possible keys (unbreakable by brute force)" << endl;
         cout << "  • CBC mode: each block depends on the previous" << endl;
-        cout << "  • Constant-time ops: prevents timing attacks" << endl << endl;
-        cout << "🖥️  Hardware Capabilities:" << endl;
-        checkHardwareCaps();
-        cout << "  AES-NI: " << (g_hasAESNI ? GREEN + string("Supported") : RED + string("Not available")) << RESET << endl;
-        cout << "  SHA-NI: " << (g_hasSHANI ? GREEN + string("Supported") : RED + string("Not available")) << RESET << endl << endl;
+        cout << "  • Random IV: same plaintext encrypts differently each time" << endl;
+        cout << "  • PKCS7 padding: handles arbitrary-length data" << endl << endl;
         cout << "⚠️  Remember: security depends on your password strength!" << endl;
     }
 
@@ -1539,7 +930,7 @@ public:
             }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-            if (choice == 0) { 
+            if (choice == 11) { 
                 cout << CYAN << "\n  ✓ Thank you for using Crypt Vault. Goodbye!\n" << RESET << endl;
                 break; 
             }
@@ -1552,9 +943,9 @@ public:
                     if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << GRAY << "  (auto: " << outputFile << ")" << RESET << endl; }
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cout << GRAY << "  🔒 Deriving key (PBKDF2, 100k iterations)..." << RESET << endl;
+                    cipher.setKey(pw);
                     clock_t start = clock();
-                    if (cipher.encryptFile(inputFile, outputFile, pw)) {
+                    if (cipher.encryptFile(inputFile, outputFile)) {
                         cout << GREEN << "\n  ✓ File encrypted successfully!" << RESET << endl;
                         cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
@@ -1571,9 +962,9 @@ public:
                     }
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cout << GRAY << "  🔓 Deriving key (PBKDF2, 100k iterations)..." << RESET << endl;
+                    cipher.setKey(pw);
                     clock_t start = clock();
-                    if (cipher.decryptFile(inputFile, outputFile, pw)) {
+                    if (cipher.decryptFile(inputFile, outputFile)) {
                         cout << GREEN << "\n  ✓ File decrypted successfully!" << RESET << endl;
                         cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
@@ -1585,8 +976,8 @@ public:
                     cout << GRAY << "  plaintext → " << RESET; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cout << GRAY << "  🔒 Deriving key..." << RESET << endl;
-                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << cipher.encryptText(text, pw) << endl;
+                    cipher.setKey(pw);
+                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << cipher.encryptText(text) << endl;
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 4: // Decrypt text
@@ -1594,8 +985,8 @@ public:
                     cout << GRAY << "  ciphertext (hex) → " << RESET; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
-                    cout << GRAY << "  🔓 Deriving key..." << RESET << endl;
-                    { string result = cipher.decryptText(text, pw);
+                    cipher.setKey(pw);
+                    { string result = cipher.decryptText(text);
                       if (result.empty()) cout << RED << "\n  ✗ Decryption failed (wrong password or invalid data)" << RESET << endl;
                       else cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
                     }
@@ -1627,12 +1018,8 @@ public:
 
                 case 10: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
-                case 11: // Benchmark
-                    Benchmark::runAll();
-                    cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-
                 default:
-                    cout << RED << "\n  ✗ Invalid choice! Please select 0-11." << RESET << endl;
+                    cout << RED << "\n  ✗ Invalid choice! Please select 1-11." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
             }
         }
