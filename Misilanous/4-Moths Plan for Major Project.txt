@@ -1,0 +1,120 @@
+---
+
+## 4-Month Implementation Roadmap
+
+```
+MONTH 1          MONTH 2          MONTH 3          MONTH 4
+Security Core → Full System → Professional → Polish & Demo
+```
+
+---
+
+## Month 1 — Security Foundation
+**Goal: Make your encryption actually secure**
+
+| Week | Task | Features |
+|------|------|---------|
+| Week 1 | Key Derivation | PBKDF2 implementation + Salt generation |
+| Week 2 | Authentication | HMAC-SHA256 file tamper detection |
+| Week 3 | Secure Input | Password hiding + Confirmation prompt |
+| Week 4 | Key File | Two-factor: password + key file combined |
+
+**Milestone:** Encrypting a single file with PBKDF2 + HMAC working end-to-end
+
+---
+
+## Month 2 — Full System Features
+**Goal: Make it handle real-world usage**
+
+| Week | Task | Features |
+|------|------|---------|
+| Week 1 | Directory Encryption | Recursive folder encrypt/decrypt |
+| Week 2 | Secure Delete | Overwrite + shred original after encryption |
+| Week 3 | Compression | zlib compress → then encrypt pipeline |
+| Week 4 | Decrypt Preview | View in memory without saving to disk |
+
+**Milestone:** Encrypt an entire folder, compress it, shred originals — full pipeline working
+
+---
+
+## Month 3 — Professional Grade
+**Goal: Make it look and work like a real tool**
+
+| Week | Task | Features |
+|------|------|---------|
+| Week 1 | CLI Arguments | `CryptVault.exe -e file.txt -p password` |
+| Week 2 | Progress Bar | Visual progress for large files |
+| Week 3 | Password Generator | Entropy-based strong password generator |
+| Week 4 | Config File | Save default settings (algorithm, output path) |
+
+**Milestone:** Full non-interactive scripting mode working via command line
+
+---
+
+## Month 4 — Polish & Demo Ready
+**Goal: Make it presentable and documented**
+
+| Week | Task | Features |
+|------|------|---------|
+| Week 1 | Encryption Log | History of all operations with timestamps |
+| Week 2 | Performance Display | Benchmark Caesar vs AES vs RSA speeds |
+| Week 3 | Integration | Connect RSA key exchange + AES + PBKDF2 together |
+| Week 4 | Testing + Demo | Stress test large files + prepare presentation |
+
+**Milestone:** Full end-to-end demo — encrypt folder, exchange key via RSA, log everything
+
+---
+
+## What Your Final Project Will Look Like
+
+```
+CryptVault — Secure File Sharing System
+│
+├── Encryption Engine
+│     ├── AES-256 (file encryption)
+│     ├── PBKDF2/Argon2 (key derivation)
+│     └── HMAC-SHA256 (tamper detection)
+│
+├── Key Exchange
+│     ├── RSA (encrypt AES key for sharing)
+│     └── Key File (2FA support)
+│
+├── File Operations
+│     ├── Single file encrypt/decrypt
+│     ├── Directory recursive encryption
+│     ├── Secure delete (shred)
+│     ├── Compress → Encrypt pipeline
+│     └── Decrypt preview (memory only)
+│
+├── Interface
+│     ├── Interactive menu
+│     ├── CLI arguments (scripting mode)
+│     └── Progress bar
+│
+└── Utilities
+      ├── Password generator
+      ├── Config file
+      ├── Encryption log/history
+      └── Performance benchmarks
+```
+
+---
+
+## Features You're Skipping (Confirmed)
+
+QR Code, Clipboard, In-place encryption, File comparison, Base64, Drag & Drop — all cut. No loss to your project's quality.
+
+---
+
+## How This Connects to Your Research Review
+
+Each month maps to a research domain your team is covering:
+
+| Month | Your Work | Research Domain |
+|-------|-----------|----------------|
+| Month 1 | PBKDF2 + HMAC | Person 1 — Cryptographic Algorithms |
+| Month 2 | Directory + Shred | Person 3 — Cloud & Storage Security |
+| Month 3 | CLI + Config | Person 2 — Access Control |
+| Month 4 | RSA Integration | Person 4 — Key Management & Auth |
+
+---
