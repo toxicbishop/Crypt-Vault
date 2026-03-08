@@ -1,0 +1,23 @@
+# Build artifacts
+build/
+*.exe
+*.o
+*.obj
+
+# System files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Temporary files
+*.tmp
+*.log
+crypt_audit.chain
+decrypted.txt
+test.enc
