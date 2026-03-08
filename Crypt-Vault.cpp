@@ -34,6 +34,8 @@
 #include <unistd.h>
 #endif
 
+#include "blockchain_audit.h"
+
 using namespace std;
 
 // ═══════════════════════════════════════════════════════════
@@ -657,6 +659,7 @@ public:
 class CryptVaultApp {
 private:
     AESCipher cipher;
+    CryptVaultBlockchain blockchain;  // Blockchain audit logging
 
     void getLineTrim(string& s) {
         getline(cin, s);
@@ -739,8 +742,9 @@ private:
         cout << CYAN << "   7" << GRAY << "  view       " << WHITE << "View file content" << RESET << endl;
         cout << CYAN << "   8" << GRAY << "  stats      " << WHITE << "Show file statistics" << RESET << endl;
         cout << CYAN << "   9" << GRAY << "  hash       " << WHITE << "Calculate SHA-256 hash" << RESET << endl;
-        cout << CYAN << "  10" << GRAY << "  about      " << WHITE << "About Crypt Vault" << RESET << endl;
-        cout << CYAN << "  11" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
+        cout << CYAN << "  10" << GRAY << "  audit      " << WHITE << "Blockchain audit log" << RESET << endl;
+        cout << CYAN << "  11" << GRAY << "  about      " << WHITE << "About Crypt Vault" << RESET << endl;
+        cout << CYAN << "  12" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
         cout << endl;
         cout << GRAY << "  ─────────────────────────────────────────────────────────────" << RESET << endl;
         cout << endl;
@@ -902,6 +906,52 @@ private:
         cout << "\n🎉 Done! " << ok << "/" << numFiles << " files decrypted." << endl;
     }
 
+    void displayAuditMenu() {
+        const string CYAN = "\033[38;5;44m";
+        const string GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m";
+        const string WHITE = "\033[38;5;255m";
+        const string RESET = "\033[0m";
+
+        cout << "\n" << WHITE << "  ─── BLOCKCHAIN AUDIT LOG ───\n" << RESET << endl;
+        cout << CYAN << "   1" << GRAY << "  view       " << WHITE << "Display full audit log" << RESET << endl;
+        cout << CYAN << "   2" << GRAY << "  validate   " << WHITE << "Validate chain integrity" << RESET << endl;
+        cout << CYAN << "   3" << GRAY << "  search     " << WHITE << "Search by filename" << RESET << endl;
+        cout << CYAN << "   4" << GRAY << "  stats      " << WHITE << "View audit statistics" << RESET << endl;
+        cout << CYAN << "   5" << GRAY << "  export     " << WHITE << "Export HTML report" << RESET << endl;
+        cout << CYAN << "   0" << GRAY << "  back       " << WHITE << "Return to main menu" << RESET << endl;
+        cout << endl;
+
+        int choice;
+        cout << GRAY << "  Selection: " << RESET; cin >> choice; cin.ignore();
+
+        switch (choice) {
+            case 1:
+                blockchain.printAuditLog();
+                break;
+            case 2:
+                cout << "\n  Validating blockchain integrity..." << endl;
+                if (blockchain.validateChain())
+                    cout << "  ✅ Chain is VALID — No tampering detected" << endl;
+                else
+                    cout << "  ❌ Chain is INVALID — TAMPERING DETECTED!" << endl;
+                break;
+            case 3: {
+                string fname;
+                cout << "\n  Enter filename to search: ";
+                getLineTrim(fname);
+                blockchain.searchByFile(fname);
+                break;
+            }
+            case 4:
+                blockchain.printStats();
+                break;
+            case 5:
+                blockchain.exportHTMLReport("audit_report.html");
+                break;
+        }
+    }
+
     void showAbout() {
         cout << "\n📚 ABOUT CRYPT VAULT" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
@@ -946,7 +996,7 @@ public:
             }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-            if (choice == 11) { 
+            if (choice == 12) { 
                 cout << CYAN << "\n  ✓ Thank you for using Crypt Vault. Goodbye!\n" << RESET << endl;
                 break; 
             }
@@ -962,9 +1012,16 @@ public:
                     cipher.setKey(pw);
                     clock_t start = clock();
                     if (cipher.encryptFile(inputFile, outputFile)) {
+                        double duration = (double)(clock()-start)/CLOCKS_PER_SEC;
                         cout << GREEN << "\n  ✓ File encrypted successfully!" << RESET << endl;
-                        cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
+                        cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << duration << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
+                        
+                        // Log to blockchain
+                        string fileHash = cipher.hashFile(inputFile);
+                        struct stat st;
+                        long long fileSize = (stat(inputFile.c_str(), &st) == 0) ? st.st_size : 0;
+                        logEncryption(blockchain, inputFile, fileHash, fileSize, duration * 1000, true);
                     }
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 }
@@ -981,9 +1038,16 @@ public:
                     cipher.setKey(pw);
                     clock_t start = clock();
                     if (cipher.decryptFile(inputFile, outputFile)) {
+                        double duration = (double)(clock()-start)/CLOCKS_PER_SEC;
                         cout << GREEN << "\n  ✓ File decrypted successfully!" << RESET << endl;
-                        cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << (double)(clock()-start)/CLOCKS_PER_SEC << "s" << RESET << endl;
+                        cout << GRAY << "  ⏱ Time: " << fixed << setprecision(4) << duration << "s" << RESET << endl;
                         cipher.showFileStats(outputFile);
+                        
+                        // Log to blockchain
+                        string fileHash = cipher.hashFile(outputFile);
+                        struct stat st;
+                        long long fileSize = (stat(outputFile.c_str(), &st) == 0) ? st.st_size : 0;
+                        logDecryption(blockchain, inputFile, fileHash, fileSize, duration * 1000, true);
                     }
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 }
@@ -1032,10 +1096,12 @@ public:
                     }
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
-                case 10: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 10: displayAuditMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+
+                case 11: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 default:
-                    cout << RED << "\n  ✗ Invalid choice! Please select 1-11." << RESET << endl;
+                    cout << RED << "\n  ✗ Invalid choice! Please select 1-12." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
             }
         }
