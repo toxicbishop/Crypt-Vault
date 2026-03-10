@@ -678,6 +678,13 @@ private:
         while (!s.empty() && (s.back() == '\r' || s.back() == ' ')) s.pop_back();
     }
 
+    // After reading filename from user input, strip surrounding quotes
+    void stripQuotes(string& path) {
+        if (path.size() >= 2 && path.front() == '"' && path.back()  == '"') {
+            path = path.substr(1, path.size() - 2);
+        }
+    }
+
     void clearScreen() {
         #ifdef _WIN32
             system("cls");
@@ -868,7 +875,7 @@ private:
         cipher.setKey(pw);
 
         vector<string> files(numFiles);
-        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
+        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); stripQuotes(files[i]); }
 
         cout << "\n🔄 Processing..." << endl;
         int ok = 0;
@@ -908,7 +915,7 @@ private:
         cipher.setKey(pw);
 
         vector<string> files(numFiles);
-        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); }
+        for (int i = 0; i < numFiles; i++) { cout << "Enter filename " << (i+1) << ": "; getLineTrim(files[i]); stripQuotes(files[i]); }
 
         cout << "\n🔄 Processing..." << endl;
         int ok = 0;
@@ -966,7 +973,7 @@ private:
             case 3: {
                 string fname;
                 cout << "\n  Enter filename to search: ";
-                getLineTrim(fname);
+                getLineTrim(fname); stripQuotes(fname);
                 blockchain.searchByFile(fname);
                 break;
             }
@@ -1032,8 +1039,8 @@ public:
             switch (choice) {
                 case 1: { // Encrypt file
                     cout << CYAN << "\n  ─── ENCRYPT FILE ───\n" << RESET << endl;
-                    cout << GRAY << "  input file  → " << RESET; getLineTrim(inputFile);
-                    cout << GRAY << "  output file → " << RESET; getLineTrim(outputFile);
+                    cout << GRAY << "  input file  → " << RESET; getLineTrim(inputFile); stripQuotes(inputFile);
+                    cout << GRAY << "  output file → " << RESET; getLineTrim(outputFile); stripQuotes(outputFile);
                     if (outputFile.empty()) { outputFile = FileHelper::addEncExtension(inputFile); cout << GRAY << "  (auto: " << outputFile << ")" << RESET << endl; }
                     pw = getPasswordWithConfirmation();
                     if (pw.empty()) break;
@@ -1055,8 +1062,8 @@ public:
                 }
                 case 2: { // Decrypt file
                     cout << CYAN << "\n  ─── DECRYPT FILE ───\n" << RESET << endl;
-                    cout << GRAY << "  input file  → " << RESET; getLineTrim(inputFile);
-                    cout << GRAY << "  output file → " << RESET; getLineTrim(outputFile);
+                    cout << GRAY << "  input file  → " << RESET; getLineTrim(inputFile); stripQuotes(inputFile);
+                    cout << GRAY << "  output file → " << RESET; getLineTrim(outputFile); stripQuotes(outputFile);
                     if (outputFile.empty()) {
                         outputFile = FileHelper::hasEncExtension(inputFile) ? FileHelper::removeEncExtension(inputFile) : "decrypted.txt";
                         cout << GRAY << "  (auto: " << outputFile << ")" << RESET << endl;
@@ -1125,19 +1132,19 @@ public:
 
                 case 7: // View file
                     cout << CYAN << "\n  ─── VIEW FILE ───\n" << RESET << endl;
-                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile);
+                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile); stripQuotes(inputFile);
                     cipher.displayFileContent(inputFile);
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 8: // File stats
                     cout << CYAN << "\n  ─── FILE STATISTICS ───\n" << RESET << endl;
-                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile);
+                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile); stripQuotes(inputFile);
                     cipher.showFileStats(inputFile);
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 case 9: // SHA-256 hash
                     cout << CYAN << "\n  ─── SHA-256 HASH ───\n" << RESET << endl;
-                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile);
+                    cout << GRAY << "  filename → " << RESET; getLineTrim(inputFile); stripQuotes(inputFile);
                     { string h = cipher.hashFile(inputFile);
                       if (h.empty()) cerr << RED << "\n  ✗ Cannot open file." << RESET << endl;
                       else cout << GREEN << "\n  ✓ SHA-256: " << RESET << h << endl;
