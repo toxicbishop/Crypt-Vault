@@ -27,13 +27,46 @@ A powerful, self-contained file and text encryption tool built in C++ using **AE
 - **SHA-256 File Hashing** — Verify file integrity
 - **Password Strength Indicator** — Real-time feedback on password quality
 - **Random IV** — Every encryption produces unique ciphertext
-- **Zero Dependencies** — No external libraries required
+## Platform Support
+| Platform | Status        | Notes                    |
+|----------|---------------|--------------------------|
+| Windows  | ✅ Full       | Native winsock2          |
+| Linux    | ✅ Full       | POSIX sockets + pthreads |
+| macOS    | ⚠️ Untested   | Should work, not tested  |
 
+## Dependencies
+- Windows: ws2_32.lib (ships with every Windows install)
+- Linux: pthread (ships with every Linux distro)
+- No external libraries required
+
+---
+
+## 5-Day Sprint Plan
+```text
+Day 1 → network_layer.h  (platform abstraction)
+        identity.h        (cross-platform node ID)
+
+Day 2 → p2p_node.h/cpp   (server + client sockets)
+        peers.txt loader
+
+Day 3 → Message protocol  (serialize/deserialize blocks)
+        broadcast on encrypt/decrypt
+
+Day 4 → Consensus         (longest chain rule)
+        chain sync on connect
+
+Day 5 → Test with 2 nodes on localhost
+        Then test Windows ↔ Linux across LAN
+```
 
 ## To Build The EXE File
 
 ```bash
-g++ -std=c++17 -O2 -o crypt-vault Crypt-Vault.cpp
+# Windows
+g++ -std=c++17 -O2 -o crypt-vault.exe Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lws2_32
+
+# Linux/macOS
+g++ -std=c++17 -O2 -o crypt-vault Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lpthread
 ```
 
 ## Usage

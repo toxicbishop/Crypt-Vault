@@ -31,11 +31,13 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <list>
 #include <string>
 #include <algorithm>
 #include <cstring>
 #include <ctime>
 #include <chrono>
+#include <thread>
 using namespace std;
 
 // ── CONSTANTS ────────────────────────────────────────────────
@@ -106,7 +108,7 @@ Block deserializeBlock(const string& data) {
     b.previousHash            = fields[1];
     b.blockHash               = fields[2];
     b.nonce                   = stoll(fields[3]);
-    b.record.operation        = (Operation)stoi(fields[4]);
+    b.record.operation        = (AuditOperation)stoi(fields[4]);
     b.record.filename         = fields[5];
     b.record.fileHash         = fields[6];
     b.record.deviceID         = fields[7];
@@ -332,7 +334,7 @@ private:
     int                     listenPort;
     socket_t                serverSock;
     bool                    running;
-    vector<PeerInfo>        peers;
+    std::list<PeerInfo> peers;
     mutex_t                 peersMutex;
 
     // ── SERVER ───────────────────────────────────────────────
@@ -378,10 +380,7 @@ private:
             }
 
             // Get peer IP
-            char ipBuf[INET_ADDRSTRLEN] = {0};
-            inet_ntop(AF_INET, &clientAddr.sin_addr,
-                      ipBuf, sizeof(ipBuf));
-            string peerIP = string(ipBuf);
+            string peerIP = string(inet_ntoa(clientAddr.sin_addr));
 
             cout << "  🔌 Incoming connection from " << peerIP << endl;
 
@@ -684,7 +683,8 @@ private:
         addr.sin_family = AF_INET;
         addr.sin_port   = htons(peer.port);
 
-        if (inet_pton(AF_INET, peer.ip.c_str(), &addr.sin_addr) <= 0) {
+        addr.sin_addr.s_addr = inet_addr(peer.ip.c_str());
+        if (addr.sin_addr.s_addr == INADDR_NONE) {
             sockClose(sock);
             return false;
         }

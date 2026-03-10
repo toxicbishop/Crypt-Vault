@@ -18,8 +18,11 @@ build/
 # Temporary files
 *.tmp
 *.log
-crypt_audit.chain
-decrypted.txt
-test.enc
-test.txt
+*.chain
+*.key
+*.enc
+test*.txt
+decrypted*.txt
+build_errors.txt
+peers.txt
 crypt-vault.exe

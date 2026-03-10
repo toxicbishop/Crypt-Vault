@@ -20,10 +20,15 @@
 #include <ctime>
 #include <sys/stat.h>
 #include <algorithm>
+#include <thread>
+#include <mutex>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <wincrypt.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
 #include <conio.h>  // For _getch() secure password input
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
@@ -35,6 +40,7 @@
 #endif
 
 #include "blockchain_audit.h"
+#include "p2p_node.h"
 
 using namespace std;
 
@@ -653,6 +659,12 @@ public:
 };
 
 // ═══════════════════════════════════════════════════════════
+// P2P Network Server
+// ═══════════════════════════════════════════════════════════
+
+// P2P logic is implemented in p2p_node.cpp / network_layer.h
+
+// ═══════════════════════════════════════════════════════════
 // Application Class
 // ═══════════════════════════════════════════════════════════
 
@@ -721,7 +733,7 @@ private:
         displayBanner();
 
         cout << GRAY << "  Type a " << CYAN << "number" << GRAY << " to select a command" << RESET << endl;
-        cout << GRAY << "  Press " << CYAN << "11" << GRAY << " to exit the application" << RESET << endl;
+        cout << GRAY << "  Press " << CYAN << "13" << GRAY << " to exit the application" << RESET << endl;
         cout << endl;
         cout << GREEN << "  →" << RESET << endl;
         cout << endl;
@@ -743,8 +755,9 @@ private:
         cout << CYAN << "   8" << GRAY << "  stats      " << WHITE << "Show file statistics" << RESET << endl;
         cout << CYAN << "   9" << GRAY << "  hash       " << WHITE << "Calculate SHA-256 hash" << RESET << endl;
         cout << CYAN << "  10" << GRAY << "  audit      " << WHITE << "Blockchain audit log" << RESET << endl;
-        cout << CYAN << "  11" << GRAY << "  about      " << WHITE << "About Crypt Vault" << RESET << endl;
-        cout << CYAN << "  12" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
+        cout << CYAN << "  11" << GRAY << "  network    " << WHITE << "P2P Network Status" << RESET << endl;
+        cout << CYAN << "  12" << GRAY << "  about      " << WHITE << "About Crypt Vault" << RESET << endl;
+        cout << CYAN << "  13" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
         cout << endl;
         cout << GRAY << "  ─────────────────────────────────────────────────────────────" << RESET << endl;
         cout << endl;
@@ -865,6 +878,13 @@ private:
                 if (cipher.encryptFile(f, FileHelper::addEncExtension(f))) {
                     cout << "✅ " << f << " → " << FileHelper::addEncExtension(f)
                          << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
+                    
+                    // Log to blockchain
+                    string fileHash = cipher.hashFile(f);
+                    struct stat st;
+                    long long fileSize = (stat(f.c_str(), &st) == 0) ? st.st_size : 0;
+                    logEncryption(blockchain, f, fileHash, fileSize, ((double)(clock()-t)/CLOCKS_PER_SEC) * 1000, true);
+
                     ok++;
                 }
             } else cout << "❌ " << f << " (not found)" << endl;
@@ -899,6 +919,13 @@ private:
                 if (cipher.decryptFile(f, outF)) {
                     cout << "✅ " << f << " → " << outF
                          << " (" << fixed << setprecision(4) << (double)(clock()-t)/CLOCKS_PER_SEC << "s)" << endl;
+                    
+                    // Log to blockchain
+                    string fileHash = cipher.hashFile(outF);
+                    struct stat st;
+                    long long fileSize = (stat(outF.c_str(), &st) == 0) ? st.st_size : 0;
+                    logDecryption(blockchain, f, fileHash, fileSize, ((double)(clock()-t)/CLOCKS_PER_SEC) * 1000, true);
+
                     ok++;
                 }
             } else cout << "❌ " << f << " (not found)" << endl;
@@ -973,6 +1000,7 @@ private:
 
 public:
     void run() {
+        p2p_init(&blockchain, 8333);
         enableVirtualTerminal();
         
         // ANSI color codes
@@ -996,7 +1024,7 @@ public:
             }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-            if (choice == 12) { 
+            if (choice == 13) { 
                 cout << CYAN << "\n  ✓ Thank you for using Crypt Vault. Goodbye!\n" << RESET << endl;
                 break; 
             }
@@ -1051,26 +1079,46 @@ public:
                     }
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 }
-                case 3: // Encrypt text
+                case 3: { // Encrypt text
                     cout << CYAN << "\n  ─── ENCRYPT TEXT ───\n" << RESET << endl;
                     cout << GRAY << "  plaintext → " << RESET; getLineTrim(text);
                     pw = getPasswordWithConfirmation();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
-                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << cipher.encryptText(text) << endl;
+                    clock_t encStart = clock();
+                    string encryptedText = cipher.encryptText(text);
+                    double encDuration = (double)(clock()-encStart)/CLOCKS_PER_SEC;
+                    
+                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << encryptedText << endl;
+                    
+                    // Log to blockchain
+                    string textHash = SHA256::hash(text);
+                    logEncryption(blockchain, "TEXT_DATA", textHash, text.length(), encDuration * 1000, true);
+                    
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                }
 
-                case 4: // Decrypt text
+                case 4: { // Decrypt text
                     cout << CYAN << "\n  ─── DECRYPT TEXT ───\n" << RESET << endl;
                     cout << GRAY << "  ciphertext (hex) → " << RESET; getLineTrim(text);
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
-                    { string result = cipher.decryptText(text);
-                      if (result.empty()) cout << RED << "\n  ✗ Decryption failed (wrong password or invalid data)" << RESET << endl;
-                      else cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
+                    clock_t decStart = clock();
+                    string result = cipher.decryptText(text);
+                    double decDuration = (double)(clock()-decStart)/CLOCKS_PER_SEC;
+
+                    if (result.empty()) {
+                        cout << RED << "\n  ✗ Decryption failed (wrong password or invalid data)" << RESET << endl;
+                    } else {
+                        cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
+                        // Log to blockchain
+                        string textHash = SHA256::hash(result);
+                        logDecryption(blockchain, "TEXT_DATA", textHash, result.length(), decDuration * 1000, true);
                     }
+                    
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                }
 
                 case 5: batchEncrypt(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 6: batchDecrypt(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
@@ -1098,13 +1146,16 @@ public:
 
                 case 10: displayAuditMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
-                case 11: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 11: p2p_status(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+
+                case 12: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 default:
-                    cout << RED << "\n  ✗ Invalid choice! Please select 1-12." << RESET << endl;
+                    cout << RED << "\n  ✗ Invalid choice! Please select 1-13." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
             }
         }
+        p2p_shutdown();
     }
 };
 
