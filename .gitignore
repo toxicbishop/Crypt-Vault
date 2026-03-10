@@ -26,3 +26,12 @@ decrypted*.txt
 build_errors.txt
 peers.txt
 crypt-vault.exe
+
+*.enc
+*.exe
+decrypted.txt
+test.txt
+identity.key
+crypt_audit.chain
+peers.txt
+build/
