@@ -21,3 +21,5 @@ build/
 crypt_audit.chain
 decrypted.txt
 test.enc
+test.txt
+crypt-vault.exe
