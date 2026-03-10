@@ -2,17 +2,16 @@
 
 A powerful, self-contained file and text encryption tool built in C++ using **AES-256-CBC** — the same encryption standard used by governments and financial institutions worldwide.
 
-
 ![Crypt Vault CLI](Assets/CRYPTVAULT.png?v=3)
 
 ## Team Members and Roles
 
-| Name | USN | Role |
-|---|---|---|
-| **Pranav** | 1KG23CB038 |  Cryptography Engineer — Implemented AES-256-CBC encryption/decryption engine, PKCS7 padding, and x64 assembly AES block operations (xor_block, CBC chaining) |
-| **Rohith R** | 1KG23CB044 |  Project Lead & Core Architecture — Designed the overall system structure, class hierarchy, and application flow|
-| **Syed** | 1KG23CB052 |  Security & Key Management — Implemented SHA-256 key derivation, random IV generation, password strength validation, and x64 assembly security primitives (secure_memzero, SHA-256 rounds) |
-| **Supreeth** | 1KG23CB051 |  Utilities & Testing — Developed batch processing, file operations, SHA-256 hashing utility, and testing |
+| Name         | USN        | Role                                                                                                                                                                                      |
+| ------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pranav**   | 1KG23CB038 | Cryptography Engineer — Implemented AES-256-CBC encryption/decryption engine, PKCS7 padding, and x64 assembly AES block operations (xor_block, CBC chaining)                              |
+| **Rohith R** | 1KG23CB044 | Project Lead & Core Architecture — Designed the overall system structure, class hierarchy, and application flow                                                                           |
+| **Syed**     | 1KG23CB052 | Security & Key Management — Implemented SHA-256 key derivation, random IV generation, password strength validation, and x64 assembly security primitives (secure_memzero, SHA-256 rounds) |
+| **Supreeth** | 1KG23CB051 | Utilities & Testing — Developed batch processing, file operations, SHA-256 hashing utility, and testing                                                                                   |
 
 ## Features
 
@@ -27,14 +26,41 @@ A powerful, self-contained file and text encryption tool built in C++ using **AE
 - **SHA-256 File Hashing** — Verify file integrity
 - **Password Strength Indicator** — Real-time feedback on password quality
 - **Random IV** — Every encryption produces unique ciphertext
+
+## Build
+
+# Windows
+
+g++ -std=c++17 -O2 -o crypt-vault.exe \
+ Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lws2_32
+
+# Linux
+
+g++ -std=c++17 -O2 -o crypt-vault \
+ Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lpthread
+
 ## Platform Support
-| Platform | Status        | Notes                    |
-|----------|---------------|--------------------------|
-| Windows  | ✅ Full       | Native winsock2          |
-| Linux    | ✅ Full       | POSIX sockets + pthreads |
-| macOS    | ⚠️ Untested   | Should work, not tested  |
+
+| Platform | Status      | Notes                    |
+| -------- | ----------- | ------------------------ |
+| Windows  | ✅ Full     | Native winsock2          |
+| Linux    | ✅ Full     | POSIX sockets + pthreads |
+| macOS    | ⚠️ Untested | Should work, not tested  |
+
+## Updated Status
+
+```
+Security Core     ████████████████████  100% ✅
+Blockchain Audit  ████████████████████  100% ✅
+P2P Network       ████████████████░░░░   80% ✅ (pushed, needs testing)
+ASM Layer         ████████████████░░░░   80% ✅
+Repo Hygiene      ████████████████░░░░   75% (build/ and .vscode/ still in)
+CLI/UX Polish     ████░░░░░░░░░░░░░░░░   20%
+Benchmarks        ░░░░░░░░░░░░░░░░░░░░    0%
+```
 
 ## Dependencies
+
 - Windows: ws2_32.lib (ships with every Windows install)
 - Linux: pthread (ships with every Linux distro)
 - No external libraries required
@@ -42,6 +68,7 @@ A powerful, self-contained file and text encryption tool built in C++ using **AE
 ---
 
 ## 5-Day Sprint Plan
+
 ```text
 Day 1 → network_layer.h  (platform abstraction)
         identity.h        (cross-platform node ID)
@@ -78,19 +105,19 @@ g++ -std=c++17 -O2 -o crypt-vault Crypt-Vault.cpp blockchain_audit.cpp p2p_node.
 
 This launches an interactive menu:
 
-| # | Feature |
-|---|---------|
-| 1 | 🔒 Encrypt a file |
-| 2 | 🔓 Decrypt a file |
-| 3 | 🔤 Encrypt text (quick) |
-| 4 | 🔤 Decrypt text (quick) |
-| 5 | 📂 Batch encrypt files |
-| 6 | 📂 Batch decrypt files |
-| 7 | 👁️ View file content |
-| 8 | 📈 File statistics |
-| 9 | #️⃣ SHA-256 file hash |
-| 10 | 📚 About |
-| 11 | 🚪 Exit |
+| #   | Feature                 |
+| --- | ----------------------- |
+| 1   | 🔒 Encrypt a file       |
+| 2   | 🔓 Decrypt a file       |
+| 3   | 🔤 Encrypt text (quick) |
+| 4   | 🔤 Decrypt text (quick) |
+| 5   | 📂 Batch encrypt files  |
+| 6   | 📂 Batch decrypt files  |
+| 7   | 👁️ View file content    |
+| 8   | 📈 File statistics      |
+| 9   | #️⃣ SHA-256 file hash    |
+| 10  | 📚 About                |
+| 11  | 🚪 Exit                 |
 
 ## How It Works
 
