@@ -23,6 +23,11 @@
 #include <ctime>
 #include <chrono>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <wincrypt.h>
+#endif
+
 using namespace std;
 
 // ─────────────────────────────────────────────────────────────
@@ -67,6 +72,8 @@ struct Block {
     string          blockHash;
     AuditRecord     record;
     long long       nonce;
+    string          signerPublicKey;
+    string          digitalSignature;
 
     string toString() const;
 };
@@ -80,11 +87,25 @@ private:
     vector<Block>   chain;
     string          chainFile;
     int             difficulty;
+    
+    // RSA Identity
+    string          publicKey;
+#ifdef _WIN32
+    HCRYPTPROV      hProv;
+    HCRYPTKEY       hKey;
+#endif
 
     string getTimestamp();
     string getDeviceID();
     string mineBlock(Block& block);
     Block createGenesisBlock();
+    
+    // Identity methods
+    void initRSA();
+    void loadOrGenerateKey();
+    string exportPublicKey();
+    string signData(const string& data);
+    bool verifySignature(const string& data, const string& signature, const string& pubKeyHex);
 
 public:
     CryptVaultBlockchain(const string& file = "crypt_audit.chain", int diff = 2);
@@ -97,6 +118,13 @@ public:
     void printStats();
     void exportHTMLReport(const string& outFile = "audit_report.html");
     int getChainSize() const;
+
+    // P2P Consensus methods
+    bool validateNewBlock(const Block& b);
+    bool validateChainExternal(const vector<Block>& c);
+    void replaceChain(const vector<Block>& newChain);
+    void addVerifiedBlock(const Block& b);
+    const vector<Block>& getChain() const;
 };
 
 // ─────────────────────────────────────────────────────────────
