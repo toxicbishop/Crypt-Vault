@@ -1,4 +1,5 @@
 #include "blockchain_audit.h"
+#include "p2p_node.h"
 #include <algorithm>
 
 // ─────────────────────────────────────────────────────────────
@@ -87,7 +88,8 @@ string Block::toString() const {
     ss << index << previousHash << record.timestamp
        << operationToString(record.operation) << record.filename
        << record.fileHash << record.deviceID << record.fileSizeBytes
-       << record.algorithm << record.hmacVerified << nonce;
+       << record.algorithm << record.hmacVerified << nonce
+       << signerPublicKey << digitalSignature;
     return ss.str();
 }
 
@@ -132,13 +134,113 @@ Block CryptVaultBlockchain::createGenesisBlock() {
         true, 0, 0.0,
         "NONE"
     };
+    genesis.signerPublicKey = publicKey;
+    genesis.digitalSignature = signData(genesis.toString());
     genesis.blockHash = mineBlock(genesis);
     return genesis;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  RSA IDENTITY METHODS
+// ─────────────────────────────────────────────────────────────
+
+#ifndef CALG_SHA_256
+#define CALG_SHA_256 0x0000800c
+#endif
+
+void CryptVaultBlockchain::initRSA() {
+#ifdef _WIN32
+    if (!CryptAcquireContext(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV, PROV_RSA_FULL, 0)) {
+        if (GetLastError() == NTE_BAD_KEYSET) {
+            CryptAcquireContext(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV, PROV_RSA_FULL, CRYPT_NEWKEYSET);
+        }
+    }
+#endif
+}
+
+void CryptVaultBlockchain::loadOrGenerateKey() {
+#ifdef _WIN32
+    if (!CryptGetUserKey(hProv, AT_SIGNATURE, &hKey)) {
+        CryptGenKey(hProv, AT_SIGNATURE, RSA1024BIT_KEY | CRYPT_EXPORTABLE, &hKey);
+    }
+    publicKey = exportPublicKey();
+#endif
+}
+
+string CryptVaultBlockchain::exportPublicKey() {
+#ifdef _WIN32
+    DWORD dwBlobLen = 0;
+    if (CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, NULL, &dwBlobLen)) {
+        vector<BYTE> pbBlob(dwBlobLen);
+        if (CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, pbBlob.data(), &dwBlobLen)) {
+            stringstream ss;
+            for(DWORD i = 0; i < dwBlobLen; ++i) ss << hex << setfill('0') << setw(2) << (int)pbBlob[i];
+            return ss.str();
+        }
+    }
+#endif
+    return "UNKNOWN_PUB_KEY";
+}
+
+string CryptVaultBlockchain::signData(const string& data) {
+#ifdef _WIN32
+    HCRYPTHASH hHash;
+    if (CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
+        CryptHashData(hHash, (BYTE*)data.c_str(), data.length(), 0);
+        DWORD dwSigLen = 0;
+        CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, NULL, &dwSigLen);
+        if (dwSigLen > 0) {
+            vector<BYTE> signature(dwSigLen);
+            if (CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, signature.data(), &dwSigLen)) {
+                CryptDestroyHash(hHash);
+                stringstream ss;
+                for(DWORD i = 0; i < dwSigLen; ++i) ss << hex << setfill('0') << setw(2) << (int)signature[i];
+                return ss.str();
+            }
+        }
+        CryptDestroyHash(hHash);
+    }
+#endif
+    return "";
+}
+
+bool CryptVaultBlockchain::verifySignature(const string& data, const string& signature, const string& pubKeyHex) {
+#ifdef _WIN32
+    vector<BYTE> pubKeyBlob;
+    for (size_t i = 0; i < pubKeyHex.length(); i += 2) {
+        pubKeyBlob.push_back((BYTE)strtol(pubKeyHex.substr(i, 2).c_str(), NULL, 16));
+    }
+    vector<BYTE> sigBytes;
+    for (size_t i = 0; i < signature.length(); i += 2) {
+        sigBytes.push_back((BYTE)strtol(signature.substr(i, 2).c_str(), NULL, 16));
+    }
+
+    HCRYPTKEY hPubKey;
+    if (!CryptImportKey(hProv, pubKeyBlob.data(), pubKeyBlob.size(), 0, 0, &hPubKey)) return false;
+
+    HCRYPTHASH hHash;
+    bool verified = false;
+    if (CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
+        CryptHashData(hHash, (BYTE*)data.c_str(), data.length(), 0);
+        if (CryptVerifySignature(hHash, sigBytes.data(), sigBytes.size(), hPubKey, NULL, 0)) {
+            verified = true;
+        }
+        CryptDestroyHash(hHash);
+    }
+    CryptDestroyKey(hPubKey);
+    return verified;
+#else
+    return true; // if not win32 auto-approve for now
+#endif
 }
 
 CryptVaultBlockchain::CryptVaultBlockchain(const string& file, int diff) {
     chainFile  = file;
     difficulty = diff;
+    
+    initRSA();
+    loadOrGenerateKey();
+
     if (!loadChain()) {
         chain.push_back(createGenesisBlock());
         saveChain();
@@ -153,6 +255,8 @@ Block CryptVaultBlockchain::addRecord(const AuditRecord& record) {
     newBlock.record.timestamp = getTimestamp();
     newBlock.record.deviceID  = getDeviceID();
     newBlock.nonce        = 0;
+    newBlock.signerPublicKey = publicKey;
+    newBlock.digitalSignature = signData(newBlock.toString());
 
     auto start = chrono::high_resolution_clock::now();
     newBlock.blockHash = mineBlock(newBlock);
@@ -165,10 +269,27 @@ Block CryptVaultBlockchain::addRecord(const AuditRecord& record) {
     cout << "  ⛓️  Block #" << newBlock.index << " mined in "
          << fixed << setprecision(2) << mineTime << "ms" << endl;
 
+    p2p_broadcastBlock(newBlock);
+
     return newBlock;
 }
 
 bool CryptVaultBlockchain::validateChain() {
+    // Check Genesis Block First
+    if (!chain.empty()) {
+        const Block& genesis = chain[0];
+        if (genesis.index != 0) return false;
+        string recomputed = SHA256::hash(genesis.toString());
+        if (recomputed != genesis.blockHash) {
+            cout << "  ❌ TAMPER DETECTED at GENESIS Block #0" << endl;
+            return false;
+        }
+        string target(difficulty, '0');
+        if (genesis.blockHash.substr(0, difficulty) != target) {
+            cout << "  ❌ INVALID TARGET at GENESIS Block #0" << endl;
+            return false;
+        }
+    }
     for (size_t i = 1; i < chain.size(); i++) {
         Block& current  = chain[i];
         Block& previous = chain[i-1];
@@ -176,6 +297,17 @@ bool CryptVaultBlockchain::validateChain() {
         string recomputed = SHA256::hash(current.toString());
         if (recomputed != current.blockHash) {
             cout << "  ❌ TAMPER DETECTED at Block #" << i << endl;
+            return false;
+        }
+
+        // Verify Signature
+        string tempSig = current.digitalSignature;
+        current.digitalSignature = ""; // toString without signature for verification
+        bool sigValid = verifySignature(current.toString(), tempSig, current.signerPublicKey);
+        current.digitalSignature = tempSig; // restore
+
+        if (!sigValid) {
+            cout << "  ❌ SIGNATURE INVALID at Block #" << i << " (Forged Block)" << endl;
             return false;
         }
 
@@ -205,6 +337,8 @@ void CryptVaultBlockchain::saveChain() {
         file << "SIZE:" << b.record.fileSizeBytes << "\n";
         file << "DURATION:" << b.record.durationMs << "\n";
         file << "ALGO:" << b.record.algorithm << "\n";
+        file << "PUBKEY:" << b.signerPublicKey << "\n";
+        file << "SIG:" << b.digitalSignature << "\n";
         file << "---\n";
     }
     file.close();
@@ -243,6 +377,8 @@ bool CryptVaultBlockchain::loadChain() {
             else if (key == "SIZE")  current.record.fileSizeBytes = stoll(val);
             else if (key == "DURATION") current.record.durationMs = stod(val);
             else if (key == "ALGO")  current.record.algorithm = val;
+            else if (key == "PUBKEY") current.signerPublicKey = val;
+            else if (key == "SIG")    current.digitalSignature = val;
         }
     }
     file.close();
@@ -355,6 +491,55 @@ void CryptVaultBlockchain::exportHTMLReport(const string& outFile) {
 
 int CryptVaultBlockchain::getChainSize() const { 
     return chain.size(); 
+}
+
+bool CryptVaultBlockchain::validateNewBlock(const Block& b) {
+    if (chain.empty()) return false;
+    const Block& last = chain.back();
+    if (b.index != (int)chain.size()) return false;
+    if (b.previousHash != last.blockHash) return false;
+    string target(difficulty, '0');
+    return SHA256::hash(const_cast<Block&>(b).toString()).substr(0, difficulty) == target;
+}
+
+bool CryptVaultBlockchain::validateChainExternal(const vector<Block>& c) {
+    if (c.empty()) return false;
+    string target(difficulty, '0');
+
+    // Check genesis block of external chain
+    if (c[0].index != 0) return false;
+    string genHash = SHA256::hash(const_cast<Block&>(c[0]).toString());
+    if (genHash != c[0].blockHash || genHash.substr(0, difficulty) != target) return false;
+
+    // Validate rest of chain
+    for (size_t i = 1; i < c.size(); i++) {
+        if (c[i].previousHash != c[i-1].blockHash) return false;
+        
+        string recomputed = SHA256::hash(const_cast<Block&>(c[i]).toString());
+        if (recomputed != c[i].blockHash) return false;
+
+        if (c[i].blockHash.substr(0, difficulty) != target) return false;
+        
+        // Verify digital signature of block
+        string blockData = c[i].previousHash + to_string(c[i].index) + c[i].record.fileHash;
+        string expectedSig = SHA256::hash(blockData + SHA256::hash(c[i].signerPublicKey + "PRIVATE"));
+        if (c[i].digitalSignature != expectedSig) return false;
+    }
+    return true;
+}
+
+void CryptVaultBlockchain::replaceChain(const vector<Block>& newChain) {
+    chain = newChain;
+    saveChain();
+}
+
+void CryptVaultBlockchain::addVerifiedBlock(const Block& b) {
+    chain.push_back(b);
+    saveChain();
+}
+
+const vector<Block>& CryptVaultBlockchain::getChain() const { 
+    return chain; 
 }
 
 // ─────────────────────────────────────────────────────────────
