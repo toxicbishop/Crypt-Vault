@@ -80,8 +80,8 @@ struct FsCompat {
 };
 
 
-#include "blockchain_audit.h"
-#include "p2p_node.h"
+#include "../include/blockchain_audit.h"
+#include "../include/p2p_node.h"
 using namespace std;
 // ═══════════════════════════════════════════════════════════
 // SHA-256 Implementation
