@@ -22,10 +22,45 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
-#include <filesystem>
+
 #include <numeric>
 
-namespace fs = std::filesystem;
+// Polyfill for C++17 <filesystem> using native Win32 API to support GCC 6.3.0
+struct FsCompat {
+    static bool is_directory(const std::string& path) {
+        struct stat st;
+        return (stat(path.c_str(), &st) == 0 && (st.st_mode & S_IFDIR));
+    }
+    static bool exists(const std::string& path) {
+        struct stat st;
+        return (stat(path.c_str(), &st) == 0);
+    }
+    static std::string extension(const std::string& path) {
+        size_t dot = path.find_last_of('.');
+        if (dot == std::string::npos) return "";
+        return path.substr(dot);
+    }
+    static void get_files_recursive(const std::string& dir, std::vector<std::string>& files) {
+#ifdef _WIN32
+        std::string search = dir + "\\*";
+        WIN32_FIND_DATAA fd;
+        HANDLE hFind = ::FindFirstFileA(search.c_str(), &fd);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            do {
+                std::string name = fd.cFileName;
+                if (name == "." || name == "..") continue;
+                std::string fullPath = dir + "\\" + name;
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    get_files_recursive(fullPath, files);
+                } else {
+                    files.push_back(fullPath);
+                }
+            } while (::FindNextFileA(hFind, &fd));
+            ::FindClose(hFind);
+        }
+#endif
+    }
+};
 
 #ifdef _WIN32
 #include <windows.h>
