@@ -1,11 +1,22 @@
 /*
- * Crypt Vault — AES-256-CBC Encryption Tool (C++ Version)
+ * Crypt Vault — AES-256-CBC Secure File Sharing System (C++ Version)
  *
  * Features:
  * - AES-256-CBC file & text encryption/decryption
- * - SHA-256 password-based key derivation
- * - PKCS7 padding, random IV via Windows CryptoAPI
- * - Batch processing, file stats, SHA-256 hashing
+ * - PBKDF2-SHA256 key derivation (100k iterations)
+ * - HMAC-SHA256 tamper detection (Encrypt-then-MAC)
+ * - Directory recursive encryption/decryption
+ * - Secure delete (multi-pass shred)
+ * - Compress → Encrypt pipeline (built-in LZ77)
+ * - Decrypt preview (memory only, no disk write)
+ * - Key file support (2FA)
+ * - CLI arguments for scripting
+ * - Progress bar for large files
+ * - Random password generator
+ * - Config file (persistent settings)
+ * - Encryption log/history
+ * - Performance benchmarks
+ * - Blockchain audit trail + P2P network
  * - No external dependencies
  */
 
@@ -20,6 +31,18 @@
 #include <ctime>
 #include <sys/stat.h>
 #include <algorithm>
+<<<<<<< Updated upstream
+=======
+#include <thread>
+#include <mutex>
+#include <chrono>
+#include <filesystem>
+#include <map>
+#include <random>
+#include <numeric>
+
+namespace fs = std::filesystem;
+>>>>>>> Stashed changes
 
 #ifdef _WIN32
 #include <windows.h>
