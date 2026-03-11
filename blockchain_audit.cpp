@@ -150,9 +150,9 @@ Block CryptVaultBlockchain::createGenesisBlock() {
 
 void CryptVaultBlockchain::initRSA() {
 #ifdef _WIN32
-    if (!CryptAcquireContext(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV, PROV_RSA_FULL, 0)) {
+    if (!CryptAcquireContextA(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV_A, PROV_RSA_FULL, 0)) {
         if (GetLastError() == NTE_BAD_KEYSET) {
-            CryptAcquireContext(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV, PROV_RSA_FULL, CRYPT_NEWKEYSET);
+            CryptAcquireContextA(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV_A, PROV_RSA_FULL, CRYPT_NEWKEYSET);
         }
     }
 #endif
@@ -379,6 +379,15 @@ bool CryptVaultBlockchain::loadChain() {
             else if (key == "ALGO")  current.record.algorithm = val;
             else if (key == "PUBKEY") current.signerPublicKey = val;
             else if (key == "SIG")    current.digitalSignature = val;
+            else if (key == "OP") {
+                if (val == "ENCRYPT")       current.record.operation = AuditOperation::ENCRYPT;
+                else if (val == "DECRYPT")  current.record.operation = AuditOperation::DECRYPT;
+                else if (val == "KEY_EXCHANGE") current.record.operation = AuditOperation::KEY_EXCHANGE;
+                else if (val == "SECURE_DELETE") current.record.operation = AuditOperation::SECURE_DELETE;
+                else if (val == "DIR_ENCRYPT")  current.record.operation = AuditOperation::DIRECTORY_ENCRYPT;
+                else if (val == "TAMPER_ALERT") current.record.operation = AuditOperation::TAMPER_ALERT;
+                else if (val == "SYSTEM_START") current.record.operation = AuditOperation::SYSTEM_START;
+            }
         }
     }
     file.close();
@@ -499,7 +508,7 @@ bool CryptVaultBlockchain::validateNewBlock(const Block& b) {
     if (b.index != (int)chain.size()) return false;
     if (b.previousHash != last.blockHash) return false;
     string target(difficulty, '0');
-    return SHA256::hash(const_cast<Block&>(b).toString()).substr(0, difficulty) == target;
+    return SHA256::hash(b.toString()).substr(0, difficulty) == target;
 }
 
 bool CryptVaultBlockchain::validateChainExternal(const vector<Block>& c) {
@@ -508,22 +517,20 @@ bool CryptVaultBlockchain::validateChainExternal(const vector<Block>& c) {
 
     // Check genesis block of external chain
     if (c[0].index != 0) return false;
-    string genHash = SHA256::hash(const_cast<Block&>(c[0]).toString());
+    string genHash = SHA256::hash(c[0].toString());
     if (genHash != c[0].blockHash || genHash.substr(0, difficulty) != target) return false;
 
     // Validate rest of chain
     for (size_t i = 1; i < c.size(); i++) {
         if (c[i].previousHash != c[i-1].blockHash) return false;
         
-        string recomputed = SHA256::hash(const_cast<Block&>(c[i]).toString());
+        string recomputed = SHA256::hash(c[i].toString());
         if (recomputed != c[i].blockHash) return false;
 
         if (c[i].blockHash.substr(0, difficulty) != target) return false;
         
-        // Verify digital signature of block
-        string blockData = c[i].previousHash + to_string(c[i].index) + c[i].record.fileHash;
-        string expectedSig = SHA256::hash(blockData + SHA256::hash(c[i].signerPublicKey + "PRIVATE"));
-        if (c[i].digitalSignature != expectedSig) return false;
+        // Verify digital signature using RSA
+        if (!verifySignature(c[i].toString(), c[i].digitalSignature, c[i].signerPublicKey)) return false;
     }
     return true;
 }
