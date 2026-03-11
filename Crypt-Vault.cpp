@@ -979,6 +979,8 @@ class CryptVaultApp {
 private:
     AESCipher cipher;
     CryptVaultBlockchain blockchain;  // Blockchain audit logging
+    Config config;
+    EncryptionLog encLog;
 
     void getLineTrim(string& s) {
         getline(cin, s);
