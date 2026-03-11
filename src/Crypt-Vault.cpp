@@ -25,6 +25,7 @@
 #include <cmath>
 #include <map>
 #include <numeric>
+#include <zlib.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -702,7 +703,7 @@ public:
 };
 
 // ═══════════════════════════════════════════════════════════
-// Simple Compressor (RLE, zero dependencies)
+// Simple Compressor (zlib)
 // ═══════════════════════════════════════════════════════════
 
 class SimpleCompressor {
@@ -710,41 +711,52 @@ public:
     static vector<unsigned char> compress(const vector<unsigned char>& input) {
         vector<unsigned char> out;
         if (input.empty()) return out;
+        
+        // Write header: "CVZ1" followed by 4 byte original size (little endian)
         out.push_back('C'); out.push_back('V'); out.push_back('Z'); out.push_back(1);
         uint32_t sz = (uint32_t)input.size();
-        for (int i = 0; i < 4; i++) out.push_back((sz >> (i*8)) & 0xFF);
-        size_t i = 0;
-        while (i < input.size()) {
-            size_t run = 1;
-            while (i+run < input.size() && input[i+run] == input[i] && run < 255) run++;
-            if (run >= 4) {
-                out.push_back(0x00); out.push_back(input[i]); out.push_back((unsigned char)run);
-                i += run;
-            } else {
-                if (input[i] == 0x00) { out.push_back(0x00); out.push_back(0x00); out.push_back(1); }
-                else out.push_back(input[i]);
-                i++;
-            }
+        for (int i = 0; i < 4; i++) out.push_back((sz >> (i * 8)) & 0xFF);
+
+        // Compress using zlib
+        uLongf compLimit = compressBound(input.size());
+        vector<unsigned char> compBuffer(compLimit);
+        
+        if (::compress(compBuffer.data(), &compLimit, input.data(), input.size()) != Z_OK) {
+            cerr << "Error: zlib compression failed for chunk." << endl;
+            return input; // Fall back to original data if compression fails
         }
+        
+        out.insert(out.end(), compBuffer.begin(), compBuffer.begin() + compLimit);
         return out;
     }
+    
     static vector<unsigned char> decompress(const vector<unsigned char>& input) {
         vector<unsigned char> out;
-        if (input.size() < 8 || input[0]!='C' || input[1]!='V' || input[2]!='Z') return out;
+        if (input.size() < 8 || input[0] != 'C' || input[1] != 'V' || input[2] != 'Z' || input[3] != 1) {
+            return out; // Invalid or uncompressed format
+        }
+        
+        // Read original size
         uint32_t sz = 0;
-        for (int i = 0; i < 4; i++) sz |= ((uint32_t)input[4+i]) << (i*8);
-        out.reserve(sz);
-        size_t i = 8;
-        while (i < input.size() && out.size() < sz) {
-            if (input[i] == 0x00 && i+2 < input.size()) {
-                for (int j = 0; j < input[i+2]; j++) out.push_back(input[i+1]);
-                i += 3;
-            } else { out.push_back(input[i]); i++; }
+        for (int i = 0; i < 4; i++) sz |= ((uint32_t)input[4 + i]) << (i * 8);
+        
+        // Decompress using zlib
+        out.resize(sz);
+        uLongf destLen = sz;
+        if (uncompress(out.data(), &destLen, input.data() + 8, input.size() - 8) != Z_OK) {
+            cerr << "Error: zlib decompression failed." << endl;
+            return {};
+        }
+        
+        if (destLen != sz) {
+             cerr << "Warning: Decompressed size does not match expected size." << endl;
+             out.resize(destLen);
         }
         return out;
     }
+    
     static bool isCompressed(const vector<unsigned char>& d) {
-        return d.size() >= 4 && d[0]=='C' && d[1]=='V' && d[2]=='Z' && d[3]==1;
+        return d.size() >= 4 && d[0] == 'C' && d[1] == 'V' && d[2] == 'Z' && d[3] == 1;
     }
 };
 
