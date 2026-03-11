@@ -8,7 +8,7 @@
  * ================================================================
  */
 
-#include "blockchain_audit.h"
+#include "../include/blockchain_audit.h"
 
 // ── BLOCK EXTENSIONS ─────────────────────────────────────────
 /*
