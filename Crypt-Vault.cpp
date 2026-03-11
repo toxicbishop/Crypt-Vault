@@ -22,6 +22,12 @@
 #include <algorithm>
 #include <thread>
 #include <mutex>
+#include <chrono>
+#include <filesystem>
+#include <map>
+#include <numeric>
+
+namespace fs = std::filesystem;
 
 #ifdef _WIN32
 #include <windows.h>
