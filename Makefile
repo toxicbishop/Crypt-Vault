@@ -29,5 +29,6 @@ $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
 clean:
-	rm -rf $(OBJ_DIR)
-	rm -f $(TARGET)
+	-rm -rf $(OBJ_DIR)
+	-rm -f $(TARGET)
+	-rm -f make_output.txt gcc_v.txt check.txt find_paths.ps1 get_gcc_paths.ps1
