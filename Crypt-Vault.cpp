@@ -931,6 +931,146 @@ void runBenchmarks() {
 // ═══════════════════════════════════════════════════════════
 // Progress Bar
 // ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// RSA Key Manager (Wrap AES Password)
+// ═══════════════════════════════════════════════════════════
+class RSAKeyManager {
+public:
+    static bool generateKeyPair(const string& pubFile, const string& privFile) {
+#ifdef _WIN32
+        HCRYPTPROV hProv;
+        HCRYPTKEY hKey;
+        
+        if (!CryptAcquireContext(&hProv, NULL, MS_ENHANCED_PROV, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+            return false;
+        }
+        
+        // Generate 2048-bit RSA key exchange pair
+        if (!CryptGenKey(hProv, AT_KEYEXCHANGE, 2048 << 16 | CRYPT_EXPORTABLE, &hKey)) {
+            CryptReleaseContext(hProv, 0);
+            return false;
+        }
+        
+        // Export Public Key
+        DWORD pubLen = 0;
+        CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, NULL, &pubLen);
+        vector<BYTE> pubBlob(pubLen);
+        if (CryptExportKey(hKey, 0, PUBLICKEYBLOB, 0, pubBlob.data(), &pubLen)) {
+            ofstream out(pubFile, ios::binary);
+            if (out.is_open()) {
+                out.write((char*)pubBlob.data(), pubLen);
+                out.close();
+            }
+        }
+        
+        // Export Private Key
+        DWORD privLen = 0;
+        CryptExportKey(hKey, 0, PRIVATEKEYBLOB, 0, NULL, &privLen);
+        vector<BYTE> privBlob(privLen);
+        if (CryptExportKey(hKey, 0, PRIVATEKEYBLOB, 0, privBlob.data(), &privLen)) {
+            ofstream out(privFile, ios::binary);
+            if (out.is_open()) {
+                out.write((char*)privBlob.data(), privLen);
+                out.close();
+            }
+        }
+        
+        CryptDestroyKey(hKey);
+        CryptReleaseContext(hProv, 0);
+        return true;
+#else
+        cerr << "  RSA key wrapping is only supported on Windows currently." << endl;
+        return false;
+#endif
+    }
+
+    static bool wrapPassword(const string& password, const string& pubFile, string& wrappedOut) {
+#ifdef _WIN32
+        ifstream in(pubFile, ios::binary);
+        if (!in.is_open()) return false;
+        
+        vector<BYTE> pubBlob((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+        in.close();
+        
+        HCRYPTPROV hProv;
+        HCRYPTKEY hKey;
+        
+        if (!CryptAcquireContext(&hProv, NULL, MS_ENHANCED_PROV, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) return false;
+        
+        if (!CryptImportKey(hProv, pubBlob.data(), pubBlob.size(), 0, 0, &hKey)) {
+            CryptReleaseContext(hProv, 0);
+            return false;
+        }
+        
+        vector<BYTE> data(password.begin(), password.end());
+        DWORD dataLen = data.size();
+        DWORD bufLen = dataLen;
+        
+        CryptEncrypt(hKey, 0, TRUE, 0, NULL, &bufLen, 0);
+        data.resize(bufLen);
+        
+        if (CryptEncrypt(hKey, 0, TRUE, 0, data.data(), &dataLen, bufLen)) {
+            stringstream ss;
+            for(size_t i=0; i<dataLen; i++) {
+                ss << hex << setw(2) << setfill('0') << (int)data[i];
+            }
+            wrappedOut = ss.str();
+            CryptDestroyKey(hKey);
+            CryptReleaseContext(hProv, 0);
+            return true;
+        }
+        
+        CryptDestroyKey(hKey);
+        CryptReleaseContext(hProv, 0);
+        return false;
+#else
+        return false;
+#endif
+    }
+
+    static bool unwrapPassword(const string& wrappedHex, const string& privFile, string& unwrappedOut) {
+#ifdef _WIN32
+        ifstream in(privFile, ios::binary);
+        if (!in.is_open()) return false;
+        
+        vector<BYTE> privBlob((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+        in.close();
+        
+        HCRYPTPROV hProv;
+        HCRYPTKEY hKey;
+        
+        if (!CryptAcquireContext(&hProv, NULL, MS_ENHANCED_PROV, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) return false;
+        
+        if (!CryptImportKey(hProv, privBlob.data(), privBlob.size(), 0, 0, &hKey)) {
+            CryptReleaseContext(hProv, 0);
+            return false;
+        }
+        
+        vector<BYTE> data;
+        for (size_t i = 0; i < wrappedHex.length(); i += 2) {
+            string byteString = wrappedHex.substr(i, 2);
+            char byte = (char) strtol(byteString.c_str(), NULL, 16);
+            data.push_back(byte);
+        }
+        
+        DWORD dataLen = data.size();
+        
+        if (CryptDecrypt(hKey, 0, TRUE, 0, data.data(), &dataLen)) {
+            unwrappedOut = string((char*)data.data(), dataLen);
+            CryptDestroyKey(hKey);
+            CryptReleaseContext(hProv, 0);
+            return true;
+        }
+        
+        CryptDestroyKey(hKey);
+        CryptReleaseContext(hProv, 0);
+        return false;
+#else
+        return false;
+#endif
+    }
+};
 class CryptVaultApp {
 private:
     AESCipher cipher;
@@ -1236,7 +1376,7 @@ private:
     }
     // ─── Directory Encryption ────────────────────────────────
     void encryptDirectory() {
-        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
         cout << CYAN << "\n  --- ENCRYPT DIRECTORY ---\n" << RESET << endl;
         string dirPath;
@@ -1270,7 +1410,7 @@ private:
              << fixed << setprecision(2) << elapsed << "s" << endl;
     }
     void decryptDirectory() {
-        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
         cout << CYAN << "\n  --- DECRYPT DIRECTORY ---\n" << RESET << endl;
         string dirPath;
@@ -1328,7 +1468,7 @@ private:
     }
     // ─── Compress + Encrypt ──────────────────────────────────
     void compressAndEncrypt() {
-        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
         cout << CYAN << "\n  --- COMPRESS + ENCRYPT ---\n" << RESET << endl;
         string filename;
@@ -1356,7 +1496,7 @@ private:
     }
     // ─── Decrypt Preview ─────────────────────────────────────
     void decryptPreview() {
-        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
         cout << CYAN << "\n  --- DECRYPT PREVIEW (memory only) ---\n" << RESET << endl;
         string filename;
@@ -1398,7 +1538,7 @@ private:
     }
     // ─── Key File Generation ─────────────────────────────────
     void generateKeyFileMenu() {
-        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
         cout << CYAN << "\n  --- GENERATE KEY FILE (2FA) ---\n" << RESET << endl;
         string filename;
@@ -1413,7 +1553,7 @@ private:
     }
     // ─── Password Generator Menu ─────────────────────────────
     void generatePasswordMenu() {
-        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
         cout << CYAN << "\n  --- PASSWORD GENERATOR ---\n" << RESET << endl;
         int len = config.getInt("password_length");
@@ -1435,7 +1575,7 @@ private:
     }
     // ─── Settings Menu ───────────────────────────────────────
     void settingsMenu() {
-        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
         cout << CYAN << "\n  --- SETTINGS ---\n" << RESET << endl;
         config.display();
@@ -1471,6 +1611,63 @@ private:
         cout << "⚠️  Remember: security depends on your password strength!" << endl;
     }
 public:
+        void rsaGenerateKeysMenu() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- GENERATE RSA KEY PAIR ---\n" << RESET << endl;
+        
+        string pubFile, privFile;
+        cout << GRAY << "  Public key filename (e.g. public.pem) -> " << RESET; getLineTrim(pubFile); stripQuotes(pubFile);
+        if(pubFile.empty()) pubFile = "public.pem";
+        
+        cout << GRAY << "  Private key filename (e.g. private.pem) -> " << RESET; getLineTrim(privFile); stripQuotes(privFile);
+        if(privFile.empty()) privFile = "private.pem";
+        
+        if (RSAKeyManager::generateKeyPair(pubFile, privFile)) {
+            cout << GREEN << "\n  RSA Key Pair generated successfully!" << RESET << endl;
+            cout << "  Share " << pubFile << " with the sender." << endl;
+            cout << "  Keep " << privFile << " absolutely safe!" << endl;
+        } else {
+            cerr << RED << "\n  Error generating RSA keys." << RESET << endl;
+        }
+    }
+
+    void rsaWrapMenu() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- RSA WRAP PASSWORD ---\n" << RESET << endl;
+        
+        string pubFile, password, wrapped;
+        cout << GRAY << "  Recipient's Public Key file -> " << RESET; getLineTrim(pubFile); stripQuotes(pubFile);
+        password = getPasswordWithConfirmation();
+        if(password.empty()) return;
+        
+        if (RSAKeyManager::wrapPassword(password, pubFile, wrapped)) {
+            cout << GREEN << "\n  Password Wrapped Successfully!" << RESET << endl;
+            cout << GRAY << "  Wrapped Data (Hex):\n" << RESET << wrapped << endl;
+            cout << "\n  Send this hex string to the recipient." << endl;
+        } else {
+            cerr << RED << "\n  Failed to wrap password with provided public key." << RESET << endl;
+        }
+    }
+
+    void rsaUnwrapMenu() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- RSA UNWRAP PASSWORD ---\n" << RESET << endl;
+        
+        string privFile, wrappedHex, unwrapped;
+        cout << GRAY << "  Your Private Key file -> " << RESET; getLineTrim(privFile); stripQuotes(privFile);
+        cout << GRAY << "  Wrapped Password (Hex) -> " << RESET; getLineTrim(wrappedHex);
+        
+        if (RSAKeyManager::unwrapPassword(wrappedHex, privFile, unwrapped)) {
+            cout << GREEN << "\n  Password Unwrapped Successfully!" << RESET << endl;
+            cout << GRAY << "  Sender's Password:\n" << RESET << unwrapped << endl;
+        } else {
+            cerr << RED << "\n  Failed to unwrap password with provided private key." << RESET << endl;
+        }
+    }
+
     void run() {
         p2p_init(&blockchain, 8333);
         enableVirtualTerminal();
@@ -1618,7 +1815,10 @@ public:
                 case 19: generatePasswordMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 20: encLog.display(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 21: settingsMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-                case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                                case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 23: rsaGenerateKeysMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 24: rsaWrapMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 25: rsaUnwrapMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 default:
                     cout << RED << "\n  ✗ Invalid choice! Please select 1-25." << RESET << endl;
