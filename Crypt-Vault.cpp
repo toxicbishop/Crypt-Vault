@@ -22,10 +22,10 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
-#include <filesystem>
+#include <experimental/filesystem>
 #include <numeric>
 
-namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;
 
 #ifdef _WIN32
 #include <windows.h>
@@ -2170,19 +2170,21 @@ int main(int argc, char* argv[]) {
             }
             if (cmd == "--encrypt-dir") {
                 int ok=0;
-                for (auto& e : fs::recursive_directory_iterator(target)) {
-                    if (e.is_regular_file() && e.path().extension() != ".enc") {
-                        if (cipher.encryptFile(e.path().string(), e.path().string() + ".enc")) ok++;
+                vector<string> files; FsCompat::get_files_recursive(target, files);
+                for (const auto& f : files) {
+                    if (FsCompat::extension(f) != ".enc") {
+                        if (cipher.encryptFile(f, f + ".enc")) ok++;
                     }
                 }
                 return ok > 0 ? 0 : 1;
             }
             if (cmd == "--decrypt-dir") {
                 int ok=0;
-                for (auto& e : fs::recursive_directory_iterator(target)) {
-                    if (e.is_regular_file() && e.path().extension() == ".enc") {
-                        string d = e.path().string(); d = d.substr(0, d.length()-4);
-                        if (cipher.decryptFile(e.path().string(), d)) ok++;
+                vector<string> files; FsCompat::get_files_recursive(target, files);
+                for (const auto& f : files) {
+                    if (FsCompat::extension(f) == ".enc") {
+                        string dec = f; dec = dec.substr(0, dec.length()-4);
+                        if (cipher.decryptFile(f, dec)) ok++;
                     }
                 }
                 return ok > 0 ? 0 : 1;
@@ -2194,3 +2196,4 @@ int main(int argc, char* argv[]) {
     app.run();
     return 0;
 }
+
