@@ -1295,6 +1295,231 @@ private:
         }
     }
 
+
+    // ─── Directory Encryption ────────────────────────────────
+    void encryptDirectory() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- ENCRYPT DIRECTORY ---\n" << RESET << endl;
+        string dirPath;
+        cout << GRAY << "  directory path -> " << RESET; getLineTrim(dirPath); stripQuotes(dirPath);
+        if (!fs::exists(dirPath) || !fs::is_directory(dirPath)) {
+            cerr << "\n  Error: '" << dirPath << "' is not a valid directory" << endl; return;
+        }
+        string pw = getPasswordWithConfirmation();
+        if (pw.empty()) return;
+        cipher.setKey(pw);
+        int total = 0, ok = 0;
+        auto start = chrono::high_resolution_clock::now();
+        for (auto& entry : fs::recursive_directory_iterator(dirPath)) {
+            if (!entry.is_regular_file()) continue;
+            string fpath = entry.path().string();
+            if (FileHelper::hasEncExtension(fpath)) continue;
+            total++;
+            string outPath = FileHelper::addEncExtension(fpath);
+            if (cipher.encryptFile(fpath, outPath)) {
+                cout << GREEN << "  + " << RESET << fpath << " -> " << outPath << endl;
+                string fHash = cipher.hashFile(fpath);
+                struct stat st; long long fSize = (stat(fpath.c_str(), &st)==0) ? st.st_size : 0;
+                encLog.log("DIR_ENCRYPT", fpath, fSize, 0, true);
+                logEncryption(blockchain, fpath, fHash, fSize, 0, true);
+                ok++;
+            }
+        }
+        auto end = chrono::high_resolution_clock::now();
+        double elapsed = chrono::duration<double>(end - start).count();
+        cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files encrypted in "
+             << fixed << setprecision(2) << elapsed << "s" << endl;
+    }
+
+    void decryptDirectory() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- DECRYPT DIRECTORY ---\n" << RESET << endl;
+        string dirPath;
+        cout << GRAY << "  directory path -> " << RESET; getLineTrim(dirPath); stripQuotes(dirPath);
+        if (!fs::exists(dirPath) || !fs::is_directory(dirPath)) {
+            cerr << "\n  Error: '" << dirPath << "' is not a valid directory" << endl; return;
+        }
+        string pw = getPassword();
+        if (pw.empty()) return;
+        cipher.setKey(pw);
+        int total = 0, ok = 0;
+        auto start = chrono::high_resolution_clock::now();
+        for (auto& entry : fs::recursive_directory_iterator(dirPath)) {
+            if (!entry.is_regular_file()) continue;
+            string fpath = entry.path().string();
+            if (!FileHelper::hasEncExtension(fpath)) continue;
+            total++;
+            string outPath = FileHelper::removeEncExtension(fpath);
+            if (cipher.decryptFile(fpath, outPath)) {
+                cout << GREEN << "  + " << RESET << fpath << " -> " << outPath << endl;
+                encLog.log("DIR_DECRYPT", fpath, 0, 0, true);
+                ok++;
+            }
+        }
+        auto end = chrono::high_resolution_clock::now();
+        double elapsed = chrono::duration<double>(end - start).count();
+        cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files decrypted in "
+             << fixed << setprecision(2) << elapsed << "s" << endl;
+    }
+
+    // ─── Secure Delete ───────────────────────────────────────
+    void secureDeleteMenu() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string RED = "\033[38;5;196m", GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- SECURE DELETE (SHRED) ---\n" << RESET << endl;
+        string filename;
+        cout << GRAY << "  filename -> " << RESET; getLineTrim(filename); stripQuotes(filename);
+        if (!FileHelper::fileExists(filename)) {
+            cerr << RED << "\n  File not found!" << RESET << endl; return;
+        }
+        cout << RED << "\n  WARNING: This will permanently destroy '" << filename << "'!" << RESET << endl;
+        cout << GRAY << "  Type 'YES' to confirm: " << RESET;
+        string confirm; getLineTrim(confirm);
+        if (confirm != "YES") { cout << "  Cancelled." << endl; return; }
+        int passes = config.getInt("shred_passes");
+        if (passes < 1) passes = 3;
+        string fHash = cipher.hashFile(filename);
+        cout << "\n  Shredding with " << passes << " passes..." << endl;
+        if (SecureDelete::shredFile(filename, passes)) {
+            cout << GREEN << "\n  File securely destroyed!" << RESET << endl;
+            logSecureDelete(blockchain, filename, fHash);
+            encLog.log("SHRED", filename, 0, 0, true);
+        } else {
+            cerr << RED << "\n  Shredding failed!" << RESET << endl;
+        }
+    }
+
+    // ─── Compress + Encrypt ──────────────────────────────────
+    void compressAndEncrypt() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- COMPRESS + ENCRYPT ---\n" << RESET << endl;
+        string filename;
+        cout << GRAY << "  input file -> " << RESET; getLineTrim(filename); stripQuotes(filename);
+        string pw = getPasswordWithConfirmation();
+        if (pw.empty()) return;
+        cipher.setKey(pw);
+        ifstream in(filename, ios::binary);
+        if (!in.is_open()) { cerr << "\n  Cannot open file" << endl; return; }
+        vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+        in.close();
+        size_t origSize = data.size();
+        auto compressed = SimpleCompressor::compress(data);
+        size_t compSize = compressed.size();
+        double ratio = origSize > 0 ? (1.0 - (double)compSize / origSize) * 100 : 0;
+        cout << GRAY << "  Compressed: " << origSize << " -> " << compSize
+             << " bytes (" << fixed << setprecision(1) << ratio << "% reduction)" << RESET << endl;
+        auto encrypted = cipher.encrypt(compressed);
+        string outFile = filename + ".cvz";
+        ofstream out(outFile, ios::binary);
+        out.write((char*)encrypted.data(), encrypted.size());
+        out.close();
+        cout << GREEN << "\n  Saved: " << outFile << RESET << endl;
+        encLog.log("COMPRESS_ENC", filename, origSize, 0, true);
+    }
+
+    // ─── Decrypt Preview ─────────────────────────────────────
+    void decryptPreview() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- DECRYPT PREVIEW (memory only) ---\n" << RESET << endl;
+        string filename;
+        cout << GRAY << "  encrypted file -> " << RESET; getLineTrim(filename); stripQuotes(filename);
+        string pw = getPassword();
+        if (pw.empty()) return;
+        cipher.setKey(pw);
+        ifstream in(filename, ios::binary);
+        if (!in.is_open()) { cerr << "\n  Cannot open file" << endl; return; }
+        vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+        in.close();
+        auto dec = cipher.decrypt(data);
+        if (dec.empty()) { cerr << "\n  Decryption failed" << endl; return; }
+        // Check if text or binary
+        bool isBinary = false;
+        for (size_t i = 0; i < min(dec.size(), (size_t)512); i++) {
+            if (dec[i] == 0) { isBinary = true; break; }
+        }
+        cout << GREEN << "\n  Preview (" << dec.size() << " bytes, "
+             << (isBinary ? "binary" : "text") << "):" << RESET << endl;
+        cout << "  " << string(50, '-') << endl;
+        if (isBinary) {
+            for (size_t i = 0; i < min(dec.size(), (size_t)256); i++) {
+                if (i % 16 == 0 && i > 0) cout << endl;
+                if (i % 16 == 0) cout << "  " << hex << setw(8) << setfill('0') << i << "  ";
+                cout << hex << setw(2) << setfill('0') << (int)dec[i] << " ";
+            }
+            cout << dec << endl;
+        } else {
+            int lines = 0;
+            for (size_t i = 0; i < dec.size() && lines < 50; i++) {
+                cout << (char)dec[i];
+                if (dec[i] == '\n') lines++;
+            }
+            if (lines >= 50) cout << "\n  ... (truncated)" << endl;
+        }
+        cout << "  " << string(50, '-') << endl;
+        secure_memzero(dec.data(), dec.size());
+    }
+
+    // ─── Key File Generation ─────────────────────────────────
+    void generateKeyFileMenu() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- GENERATE KEY FILE (2FA) ---\n" << RESET << endl;
+        string filename;
+        cout << GRAY << "  key file name -> " << RESET; getLineTrim(filename); stripQuotes(filename);
+        if (filename.empty()) filename = "cryptvault.keyfile";
+        if (KeyFileManager::generateKeyFile(filename)) {
+            cout << GREEN << "\n  Key file created: " << filename << RESET << endl;
+            cout << GRAY << "  Keep this file safe! You'll need it + your password to decrypt." << RESET << endl;
+        } else {
+            cerr << "\n  Failed to generate key file" << endl;
+        }
+    }
+
+    // ─── Password Generator Menu ─────────────────────────────
+    void generatePasswordMenu() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- PASSWORD GENERATOR ---\n" << RESET << endl;
+        int len = config.getInt("password_length");
+        if (len < 8) len = 24;
+        cout << GRAY << "  Length (default " << len << "): " << RESET;
+        string lenStr; getLineTrim(lenStr);
+        if (!lenStr.empty()) { try { len = stoi(lenStr); } catch (...) {} }
+        if (len < 4) len = 4; if (len > 128) len = 128;
+        string pw = PasswordGenerator::generate(len);
+        double ent = PasswordGenerator::entropy(pw);
+        cout << GREEN << "\n  Generated: " << RESET << pw << endl;
+        cout << GRAY << "  Length: " << pw.length() << " chars" << RESET << endl;
+        cout << GRAY << "  Entropy: " << fixed << setprecision(1) << ent << " bits" << RESET << endl;
+        string strength;
+        if (ent < 40) strength = "Weak"; else if (ent < 60) strength = "Fair";
+        else if (ent < 80) strength = "Good"; else if (ent < 100) strength = "Strong";
+        else strength = "Excellent";
+        cout << GRAY << "  Strength: " << strength << RESET << endl;
+    }
+
+    // ─── Settings Menu ───────────────────────────────────────
+    void settingsMenu() {
+        const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        cout << CYAN << "\n  --- SETTINGS ---\n" << RESET << endl;
+        config.display();
+        cout << GRAY << "  Enter setting name (or 'save' to save, 'back' to return): " << RESET;
+        string key; getLineTrim(key);
+        if (key == "back" || key.empty()) return;
+        if (key == "save") { config.save(); cout << GREEN << "  Settings saved!" << RESET << endl; return; }
+        cout << GRAY << "  New value for '" << key << "': " << RESET;
+        string val; getLineTrim(val);
+        config.set(key, val);
+        config.save();
+        cout << GREEN << "  Updated: " << key << " = " << val << RESET << endl;
+    }
+
+
     void showAbout() {
         cout << "\n📚 ABOUT CRYPT VAULT" << endl;
         cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << endl;
