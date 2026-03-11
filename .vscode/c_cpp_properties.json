@@ -1,22 +1,40 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "MinGW",
+            "compileCommands": "${workspaceFolder}/compile_commands.json",
             "includePath": [
-                "${workspaceFolder}/**",
-                "${workspaceFolder}/include",
-                "C:/msys64/mingw64/include"
+                "C:/msys64/mingw64/include/c++/15.2.0",
+                "C:/msys64/mingw64/include/c++/15.2.0/x86_64-w64-mingw32",
+                "C:/msys64/mingw64/include/c++/15.2.0/backward",
+                "C:/msys64/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include",
+                "C:/msys64/mingw64/include",
+                "C:/msys64/mingw64/lib/gcc/x86_64-w64-mingw32/15.2.0/include-fixed",
+                "${workspaceFolder}/**"
             ],
             "defines": [
                 "_DEBUG",
                 "UNICODE",
                 "_UNICODE",
-                "_WIN32"
+                "_WIN32",
+                "WIN32",
+                "__GNUC__=15",
+                "__cplusplus=201703L"
             ],
             "compilerPath": "C:\\msys64\\mingw64\\bin\\g++.exe",
             "cStandard": "c11",
             "cppStandard": "c++17",
-            "intelliSenseMode": "windows-gcc-x64"
+            "intelliSenseMode": "windows-gcc-x64",
+            "compilerArgs": [
+                "-std=c++17"
+            ],
+            "browse": {
+                "path": [
+                    "C:/msys64/mingw64/include",
+                    "${workspaceFolder}"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
         }
     ],
     "version": 4
