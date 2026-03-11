@@ -107,40 +107,72 @@ namespace SHA256Impl {
     inline uint32 sig1(uint32 x) { return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25); }
     inline uint32 gam0(uint32 x) { return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3); }
     inline uint32 gam1(uint32 x) { return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10); }
-    vector<unsigned char> hash(const unsigned char* data, size_t len) {
-        uint32 h[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
-        uint64 bitlen = (uint64)len * 8;
-        // Padding
-        vector<unsigned char> msg(data, data + len);
-        msg.push_back(0x80);
-        while ((msg.size() % 64) != 56) msg.push_back(0x00);
-        for (int i = 7; i >= 0; i--) msg.push_back((unsigned char)(bitlen >> (i * 8)));
-        // Process blocks
-        for (size_t off = 0; off < msg.size(); off += 64) {
+
+    class Hasher {
+        uint32 states[8];
+        unsigned char buffer[64];
+        uint64 bitlen;
+        size_t bufferLen;
+        void processBlock(const unsigned char* b) {
             uint32 w[64];
             for (int i = 0; i < 16; i++)
-                w[i] = ((uint32)msg[off+i*4]<<24)|((uint32)msg[off+i*4+1]<<16)|((uint32)msg[off+i*4+2]<<8)|msg[off+i*4+3];
+                w[i] = ((uint32)b[i*4]<<24)|((uint32)b[i*4+1]<<16)|((uint32)b[i*4+2]<<8)|b[i*4+3];
             for (int i = 16; i < 64; i++)
                 w[i] = gam1(w[i-2]) + w[i-7] + gam0(w[i-15]) + w[i-16];
-            uint32 a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+            uint32 a=states[0],b1=states[1],c=states[2],d=states[3],e=states[4],f=states[5],g=states[6],hh=states[7];
             for (int i = 0; i < 64; i++) {
                 uint32 t1 = hh + sig1(e) + ch(e,f,g) + K[i] + w[i];
-                uint32 t2 = sig0(a) + maj(a,b,c);
-                hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+                uint32 t2 = sig0(a) + maj(a,b1,c);
+                hh=g; g=f; f=e; e=d+t1; d=c; c=b1; b1=a; a=t1+t2;
             }
-            h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=hh;
+            states[0]+=a;states[1]+=b1;states[2]+=c;states[3]+=d;states[4]+=e;states[5]+=f;states[6]+=g;states[7]+=hh;
         }
-        vector<unsigned char> result(32);
-        for (int i = 0; i < 8; i++) {
-            result[i*4]=(h[i]>>24)&0xff; result[i*4+1]=(h[i]>>16)&0xff;
-            result[i*4+2]=(h[i]>>8)&0xff; result[i*4+3]=h[i]&0xff;
+    public:
+        Hasher() { reset(); }
+        void reset() {
+            states[0]=0x6a09e667; states[1]=0xbb67ae85; states[2]=0x3c6ef372; states[3]=0xa54ff53a;
+            states[4]=0x510e527f; states[5]=0x9b05688c; states[6]=0x1f83d9ab; states[7]=0x5be0cd19;
+            bitlen = 0; bufferLen = 0;
         }
-        return result;
+        void update(const unsigned char* data, size_t len) {
+            for (size_t i = 0; i < len; i++) {
+                buffer[bufferLen++] = data[i];
+                if (bufferLen == 64) {
+                    processBlock(buffer);
+                    bitlen += 512;
+                    bufferLen = 0;
+                }
+            }
+        }
+        vector<unsigned char> final() {
+            uint64 totalBitLen = bitlen + bufferLen * 8;
+            buffer[bufferLen++] = 0x80;
+            if (bufferLen > 56) {
+                while (bufferLen < 64) buffer[bufferLen++] = 0x00;
+                processBlock(buffer);
+                bufferLen = 0;
+            }
+            while (bufferLen < 56) buffer[bufferLen++] = 0x00;
+            for (int i = 7; i >= 0; i--) buffer[56 + (7 - i)] = (unsigned char)(totalBitLen >> (i * 8));
+            processBlock(buffer);
+            vector<unsigned char> res(32);
+            for (int i = 0; i < 8; i++) {
+                res[i*4]=(states[i]>>24)&0xff; res[i*4+1]=(states[i]>>16)&0xff;
+                res[i*4+2]=(states[i]>>8)&0xff; res[i*4+3]=states[i]&0xff;
+            }
+            return res;
+        }
+    };
+
+    static vector<unsigned char> hash(const unsigned char* data, size_t len) {
+        Hasher h;
+        h.update(data, len);
+        return h.final();
     }
-    vector<unsigned char> hash(const string& s) {
+    static vector<unsigned char> hash(const string& s) {
         return hash((const unsigned char*)s.data(), s.size());
     }
-    string toHex(const vector<unsigned char>& h) {
+    static string toHex(const vector<unsigned char>& h) {
         stringstream ss;
         for (auto b : h) ss << hex << setfill('0') << setw(2) << (int)b;
         return ss.str();
@@ -361,37 +393,44 @@ bool constant_time_compare(const unsigned char* a, const unsigned char* b, size_
     }
     return diff == 0;
 }
-// HMAC-SHA256 implementation
+// HMAC-SHA256 Context for incremental hashing
+class HMAC_SHA256 {
+    SHA256Impl::Hasher inner, outer;
+public:
+    HMAC_SHA256(const unsigned char* key, size_t keyLen) {
+        const size_t BLOCK_SIZE = 64;
+        unsigned char keyBlock[BLOCK_SIZE] = {0};
+        if (keyLen > BLOCK_SIZE) {
+            auto h = SHA256Impl::hash(key, keyLen);
+            memcpy(keyBlock, h.data(), 32);
+        } else {
+            memcpy(keyBlock, key, keyLen);
+        }
+        unsigned char ipad[BLOCK_SIZE], opad[BLOCK_SIZE];
+        for (size_t i = 0; i < BLOCK_SIZE; i++) {
+            ipad[i] = keyBlock[i] ^ 0x36;
+            opad[i] = keyBlock[i] ^ 0x5c;
+        }
+        inner.update(ipad, BLOCK_SIZE);
+        outer.update(opad, BLOCK_SIZE);
+        secure_memzero(keyBlock, BLOCK_SIZE);
+    }
+    void update(const unsigned char* data, size_t len) {
+        inner.update(data, len);
+    }
+    vector<unsigned char> final() {
+        auto ih = inner.final();
+        outer.update(ih.data(), ih.size());
+        return outer.final();
+    }
+};
+
+// HMAC-SHA256 high-level utility
 vector<unsigned char> hmac_sha256(const unsigned char* key, size_t keyLen, 
                                    const unsigned char* data, size_t dataLen) {
-    const size_t BLOCK_SIZE = 64;
-    unsigned char keyBlock[BLOCK_SIZE] = {0};
-    
-    // If key > block size, hash it first
-    if (keyLen > BLOCK_SIZE) {
-        auto h = SHA256Impl::hash(key, keyLen);
-        memcpy(keyBlock, h.data(), 32);
-    } else {
-        memcpy(keyBlock, key, keyLen);
-    }
-    
-    // Create inner and outer padded keys
-    unsigned char ipad[BLOCK_SIZE], opad[BLOCK_SIZE];
-    for (size_t i = 0; i < BLOCK_SIZE; i++) {
-        ipad[i] = keyBlock[i] ^ 0x36;
-        opad[i] = keyBlock[i] ^ 0x5c;
-    }
-    
-    // Inner hash: H(ipad || data)
-    vector<unsigned char> inner(ipad, ipad + BLOCK_SIZE);
-    inner.insert(inner.end(), data, data + dataLen);
-    auto innerHash = SHA256Impl::hash(inner.data(), inner.size());
-    
-    // Outer hash: H(opad || innerHash)
-    vector<unsigned char> outer(opad, opad + BLOCK_SIZE);
-    outer.insert(outer.end(), innerHash.begin(), innerHash.end());
-    
-    return SHA256Impl::hash(outer.data(), outer.size());
+    HMAC_SHA256 ctx(key, keyLen);
+    ctx.update(data, dataLen);
+    return ctx.final();
 }
 // PBKDF2-SHA256 key derivation
 void pbkdf2_sha256(const string& password, const unsigned char* salt, size_t saltLen,
@@ -424,6 +463,111 @@ void pbkdf2_sha256(const string& password, const unsigned char* salt, size_t sal
         memcpy(output + offset, T.data(), copyLen);
     }
 }
+// ═══════════════════════════════════════════════════════════
+// Progress Bar
+// ═══════════════════════════════════════════════════════════
+
+class ProgressBar {
+    size_t total, current;
+    int barWidth;
+    chrono::steady_clock::time_point startTime;
+public:
+    ProgressBar(size_t t, int w = 40) : total(t), current(0), barWidth(w) {
+        startTime = chrono::steady_clock::now();
+    }
+    void update(size_t bytes) {
+        current += bytes;
+        if (total == 0) return;
+        double frac = (double)current / total;
+        int filled = (int)(frac * barWidth);
+        auto now = chrono::steady_clock::now();
+        double elapsed = chrono::duration<double>(now - startTime).count();
+        double speed = elapsed > 0 ? (current / 1048576.0) / elapsed : 0;
+        double eta = speed > 0 && current < total ? ((total - current) / 1048576.0) / speed : 0;
+        cout << "\r  [";
+        for (int i = 0; i < barWidth; i++) cout << (i < filled ? "#" : ".");
+        cout << "] " << (int)(frac * 100) << "% | "
+             << fixed << setprecision(1) << speed << " MB/s | ETA " << (int)eta << "s" << flush;
+    }
+    void finish() {
+        auto now = chrono::steady_clock::now();
+        double elapsed = chrono::duration<double>(now - startTime).count();
+        double speed = elapsed > 0 ? (total / 1048576.0) / elapsed : 0;
+        cout << "\r  [";
+        for (int i = 0; i < barWidth; i++) cout << "#";
+        cout << "] 100% | " << fixed << setprecision(1) << speed << " MB/s | Done!     " << endl;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Secure Delete (Shred)
+// ═══════════════════════════════════════════════════════════
+
+class SecureDelete {
+public:
+    static bool shredFile(const string& filename, int passes = 3) {
+        struct stat st;
+        if (stat(filename.c_str(), &st) != 0) {
+            cerr << "\n  Error: Cannot access '" << filename << "'" << endl;
+            return false;
+        }
+        long long fileSize = st.st_size;
+        fstream file(filename, ios::in | ios::out | ios::binary);
+        if (!file.is_open()) return false;
+
+        vector<unsigned char> buffer(min((long long)131072, fileSize)); // Larger buffer [128KB]
+        ProgressBar progress(fileSize * (passes + 1), 30); 
+        
+        for (int pass = 0; pass < passes; pass++) {
+            file.seekp(0, ios::beg);
+            long long remaining = fileSize;
+            while (remaining > 0) {
+                size_t chunk = min((size_t)remaining, buffer.size());
+                if (pass % 3 == 0) memset(buffer.data(), 0x00, chunk);
+                else if (pass % 3 == 1) memset(buffer.data(), 0xFF, chunk);
+                else generateRandomBytes(buffer.data(), chunk);
+                
+                file.write((char*)buffer.data(), chunk);
+                file.flush();
+                remaining -= chunk;
+                progress.update(chunk);
+            }
+        }
+        
+        if (passes % 3 != 1) {
+             file.seekp(0, ios::beg);
+             long long remaining = fileSize;
+             while (remaining > 0) {
+                 size_t chunk = min((size_t)remaining, buffer.size());
+                 memset(buffer.data(), 0x00, chunk);
+                 file.write((char*)buffer.data(), chunk);
+                 file.flush();
+                 remaining -= chunk;
+                 progress.update(chunk/2); 
+             }
+        }
+
+        progress.finish();
+        secure_memzero(buffer.data(), buffer.size());
+        file.close();
+
+        string currentName = filename;
+        size_t lastSlash = filename.find_last_of("\\/");
+        string dir = (lastSlash == string::npos) ? "" : filename.substr(0, lastSlash + 1);
+
+        for (int i = 0; i < 3; i++) {
+            unsigned char randArr[8];
+            generateRandomBytes(randArr, 8);
+            string tempName = dir + bytesToHex(randArr, 8);
+            if (rename(currentName.c_str(), tempName.c_str()) == 0) {
+                currentName = tempName;
+            }
+        }
+
+        return remove(currentName.c_str()) == 0;
+    }
+};
+
 // ═══════════════════════════════════════════════════════════
 // AES Cipher Class (PBKDF2 + HMAC-SHA256 Authentication)
 // File format: salt(16) + iv(16) + ciphertext + hmac(32)
@@ -535,27 +679,132 @@ public:
     bool encryptFile(const string& inputFile, const string& outputFile) {
         ifstream in(inputFile, ios::binary);
         if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
-        vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
-        in.close();
-        auto enc = encrypt(data);
-        if (enc.empty()) { cerr << "\n❌ Encryption failed" << endl; return false; }
+        
+        in.seekg(0, ios::end);
+        long long fileSize = in.tellg();
+        in.seekg(0, ios::beg);
+
+        unsigned char salt[SALT_SIZE], iv[IV_SIZE];
+        if (!generateRandomBytes(salt, SALT_SIZE) || !generateRandomBytes(iv, IV_SIZE)) return false;
+        deriveKeys(salt);
+        
         ofstream out(outputFile, ios::binary);
         if (!out.is_open()) { cerr << "\n❌ Error: Cannot create '" << outputFile << "'" << endl; return false; }
-        out.write((char*)enc.data(), enc.size());
-        out.close();
+
+        out.write((char*)salt, SALT_SIZE);
+        out.write((char*)iv, IV_SIZE);
+
+        HMAC_SHA256 hmac(authKey, 32);
+        hmac.update(salt, SALT_SIZE);
+        hmac.update(iv, IV_SIZE);
+
+        ProgressBar progress(fileSize, 30);
+        unsigned char prev[16]; memcpy(prev, iv, 16);
+        vector<unsigned char> buffer(131072); // 128KB buffer
+
+        while (in.read((char*)buffer.data(), buffer.size()) || in.gcount() > 0) {
+            size_t bytesRead = in.gcount();
+            vector<unsigned char> chunk(buffer.begin(), buffer.begin() + bytesRead);
+            if (in.eof()) chunk = pkcs7Pad(chunk);
+            
+            for (size_t i = 0; i < chunk.size(); i += 16) {
+                unsigned char block[16];
+                for (int j = 0; j < 16; j++) block[j] = chunk[i+j] ^ prev[j];
+                ctx.encryptBlock(block);
+                out.write((char*)block, 16);
+                hmac.update(block, 16);
+                memcpy(prev, block, 16);
+            }
+            if (in.eof()) break;
+            progress.update(bytesRead);
+        }
+        auto h = hmac.final();
+        out.write((char*)h.data(), HMAC_SIZE);
+        progress.finish();
+        in.close(); out.close();
         return true;
     }
+
     bool decryptFile(const string& inputFile, const string& outputFile) {
         ifstream in(inputFile, ios::binary);
         if (!in.is_open()) { cerr << "\n❌ Error: Cannot open '" << inputFile << "'" << endl; return false; }
-        vector<unsigned char> data((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
-        in.close();
-        auto dec = decrypt(data);
-        if (dec.empty()) { cerr << "\n❌ Decryption failed (wrong password or corrupt file)" << endl; return false; }
+        
+        in.seekg(0, ios::end);
+        long long totalSize = in.tellg();
+        in.seekg(0, ios::beg);
+
+        if (totalSize < (SALT_SIZE + IV_SIZE + HMAC_SIZE)) return false;
+        long long ciphertextLen = totalSize - SALT_SIZE - IV_SIZE - HMAC_SIZE;
+
+        unsigned char salt[SALT_SIZE], iv[IV_SIZE];
+        in.read((char*)salt, SALT_SIZE);
+        in.read((char*)iv, IV_SIZE);
+        deriveKeys(salt);
+
+        // --- Pass 1: HMAC Verification ---
+        cout << "  [1/2] Verifying Integrity..." << endl;
+        HMAC_SHA256 hmac(authKey, 32);
+        hmac.update(salt, SALT_SIZE);
+        hmac.update(iv, IV_SIZE);
+
+        vector<unsigned char> buffer(131072); // 128KB
+        long long remaining = ciphertextLen;
+        while (remaining > 0) {
+            size_t toRead = (size_t)min((long long)buffer.size(), remaining);
+            in.read((char*)buffer.data(), toRead);
+            hmac.update(buffer.data(), toRead);
+            remaining -= toRead;
+        }
+
+        unsigned char expectedHmac[HMAC_SIZE];
+        in.read((char*)expectedHmac, HMAC_SIZE);
+        auto computedHmac = hmac.final();
+        if (!constant_time_compare(computedHmac.data(), expectedHmac, HMAC_SIZE)) {
+            cerr << "\n❌ HMAC verification failed - file tampered or wrong password" << endl;
+            return false;
+        }
+
+        // --- Pass 2: Decryption ---
+        cout << "  [2/2] Decrypting Content..." << endl;
+        in.clear(); // Reset EOF
+        in.seekg(SALT_SIZE + IV_SIZE, ios::beg);
         ofstream out(outputFile, ios::binary);
-        if (!out.is_open()) { cerr << "\n❌ Error: Cannot create '" << outputFile << "'" << endl; return false; }
-        out.write((char*)dec.data(), dec.size());
-        out.close();
+        if (!out.is_open()) return false;
+
+        ProgressBar progress(ciphertextLen, 30);
+        unsigned char prev[16]; memcpy(prev, iv, 16);
+        
+        remaining = ciphertextLen;
+        vector<unsigned char> lastBlock;
+        while (remaining > 0) {
+            size_t toRead = (size_t)min((long long)buffer.size(), remaining);
+            in.read((char*)buffer.data(), toRead);
+            for (size_t i = 0; i < toRead; i += 16) {
+                unsigned char block[16], enc[16];
+                memcpy(block, buffer.data() + i, 16);
+                memcpy(enc, block, 16);
+                ctx.decryptBlock(block);
+                for (int j = 0; j < 16; j++) block[j] ^= prev[j];
+                
+                if (remaining - (long long)toRead == 0 && (i + 16) == toRead) {
+                    lastBlock.assign(block, block + 16);
+                } else {
+                    out.write((char*)block, 16);
+                }
+                memcpy(prev, enc, 16);
+            }
+            remaining -= toRead;
+            progress.update(toRead);
+        }
+        
+        if (!pkcs7Unpad(lastBlock)) {
+            cerr << "\n❌ Padding error - likely wrong password" << endl;
+            return false;
+        }
+        out.write((char*)lastBlock.data(), lastBlock.size());
+        
+        progress.finish();
+        in.close(); out.close();
         return true;
     }
     string encryptText(const string& text) {
@@ -629,78 +878,7 @@ public:
 // P2P logic is implemented in p2p_node.cpp / network_layer.h
 
 
-// ═══════════════════════════════════════════════════════════
-// Progress Bar
-// ═══════════════════════════════════════════════════════════
 
-class ProgressBar {
-    size_t total, current;
-    int barWidth;
-    chrono::steady_clock::time_point startTime;
-public:
-    ProgressBar(size_t t, int w = 40) : total(t), current(0), barWidth(w) {
-        startTime = chrono::steady_clock::now();
-    }
-    void update(size_t bytes) {
-        current += bytes;
-        if (total == 0) return;
-        double frac = (double)current / total;
-        int filled = (int)(frac * barWidth);
-        auto now = chrono::steady_clock::now();
-        double elapsed = chrono::duration<double>(now - startTime).count();
-        double speed = elapsed > 0 ? (current / 1048576.0) / elapsed : 0;
-        double eta = speed > 0 && current < total ? ((total - current) / 1048576.0) / speed : 0;
-        cout << "\r  [";
-        for (int i = 0; i < barWidth; i++) cout << (i < filled ? "#" : ".");
-        cout << "] " << (int)(frac * 100) << "% | "
-             << fixed << setprecision(1) << speed << " MB/s | ETA " << (int)eta << "s" << flush;
-    }
-    void finish() {
-        auto now = chrono::steady_clock::now();
-        double elapsed = chrono::duration<double>(now - startTime).count();
-        double speed = elapsed > 0 ? (total / 1048576.0) / elapsed : 0;
-        cout << "\r  [";
-        for (int i = 0; i < barWidth; i++) cout << "#";
-        cout << "] 100% | " << fixed << setprecision(1) << speed << " MB/s | Done!     " << endl;
-    }
-};
-
-// ═══════════════════════════════════════════════════════════
-// Secure Delete (Shred)
-// ═══════════════════════════════════════════════════════════
-
-class SecureDelete {
-public:
-    static bool shredFile(const string& filename, int passes = 3) {
-        struct stat st;
-        if (stat(filename.c_str(), &st) != 0) {
-            cerr << "\n  Error: Cannot access '" << filename << "'" << endl;
-            return false;
-        }
-        long long fileSize = st.st_size;
-        fstream file(filename, ios::in | ios::out | ios::binary);
-        if (!file.is_open()) return false;
-        vector<unsigned char> buffer(min((long long)65536, fileSize));
-        ProgressBar progress(fileSize * passes, 30);
-        for (int pass = 0; pass < passes; pass++) {
-            file.seekp(0, ios::beg);
-            long long remaining = fileSize;
-            while (remaining > 0) {
-                size_t chunk = min((size_t)remaining, buffer.size());
-                if (pass == 0) memset(buffer.data(), 0x00, chunk);
-                else if (pass == 1) memset(buffer.data(), 0xFF, chunk);
-                else generateRandomBytes(buffer.data(), chunk);
-                file.write((char*)buffer.data(), chunk);
-                file.flush();
-                remaining -= chunk;
-                progress.update(chunk);
-            }
-        }
-        progress.finish();
-        file.close();
-        return remove(filename.c_str()) == 0;
-    }
-};
 
 // ═══════════════════════════════════════════════════════════
 // Simple Compressor (zlib)
@@ -708,55 +886,92 @@ public:
 
 class SimpleCompressor {
 public:
-    static vector<unsigned char> compress(const vector<unsigned char>& input) {
-        vector<unsigned char> out;
-        if (input.empty()) return out;
-        
-        // Write header: "CVZ1" followed by 4 byte original size (little endian)
-        out.push_back('C'); out.push_back('V'); out.push_back('Z'); out.push_back(1);
-        uint32_t sz = (uint32_t)input.size();
-        for (int i = 0; i < 4; i++) out.push_back((sz >> (i * 8)) & 0xFF);
+    static bool compressFile(const string& src, const string& dst) {
+        ifstream in(src, ios::binary | ios::ate);
+        if (!in.is_open()) return false;
+        long long szOff = in.tellg();
+        uint32_t sz = (szOff > 0xFFFFFFFF) ? 0xFFFFFFFF : (uint32_t)szOff;
+        in.seekg(0, ios::beg);
 
-        // Compress using zlib
-        uLongf compLimit = compressBound(input.size());
-        vector<unsigned char> compBuffer(compLimit);
+        ofstream out(dst, ios::binary);
+        if (!out.is_open()) return false;
+
+        out.write("CVZ\x01", 4);
+        for (int i = 0; i < 4; i++) out.put((sz >> (i * 8)) & 0xFF);
+
+        z_stream zs; memset(&zs, 0, sizeof(zs));
+        if (deflateInit(&zs, Z_DEFAULT_COMPRESSION) != Z_OK) return false;
         
-        if (::compress(compBuffer.data(), &compLimit, input.data(), input.size()) != Z_OK) {
-            cerr << "Error: zlib compression failed for chunk." << endl;
-            return input; // Fall back to original data if compression fails
-        }
-        
-        out.insert(out.end(), compBuffer.begin(), compBuffer.begin() + compLimit);
-        return out;
+        vector<unsigned char> inB(131072), outB(131072);
+        int flush;
+        do {
+            in.read((char*)inB.data(), inB.size());
+            zs.avail_in = (uInt)in.gcount();
+            flush = in.eof() ? Z_FINISH : Z_NO_FLUSH;
+            zs.next_in = inB.data();
+            do {
+                zs.avail_out = (uInt)outB.size();
+                zs.next_out = outB.data();
+                deflate(&zs, flush);
+                out.write((char*)outB.data(), outB.size() - zs.avail_out);
+            } while (zs.avail_out == 0);
+        } while (flush != Z_FINISH);
+        deflateEnd(&zs);
+        return true;
     }
-    
+
+    static bool decompressFile(const string& src, const string& dst) {
+        ifstream in(src, ios::binary);
+        ofstream out(dst, ios::binary);
+        if (!in || !out) return false;
+        char hdr[4]; in.read(hdr, 4);
+        if (memcmp(hdr, "CVZ\x01", 4) != 0) return false;
+        in.ignore(4); // Skip size 
+
+        z_stream zs; memset(&zs, 0, sizeof(zs));
+        if (inflateInit(&zs) != Z_OK) return false;
+
+        vector<unsigned char> inB(131072), outB(131072);
+        int ret;
+        do {
+            in.read((char*)inB.data(), inB.size());
+            zs.avail_in = (uInt)in.gcount();
+            if (zs.avail_in == 0) break;
+            zs.next_in = inB.data();
+            do {
+                zs.avail_out = (uInt)outB.size();
+                zs.next_out = outB.data();
+                ret = inflate(&zs, Z_NO_FLUSH);
+                out.write((char*)outB.data(), outB.size() - zs.avail_out);
+            } while (zs.avail_out == 0);
+        } while (ret != Z_STREAM_END);
+        inflateEnd(&zs);
+        return ret == Z_STREAM_END;
+    }
+
+    static vector<unsigned char> compress(const vector<unsigned char>& input) {
+        if (input.empty()) return {};
+        uLongf cL = compressBound(input.size());
+        vector<unsigned char> res(8 + cL);
+        memcpy(res.data(), "CVZ\x01", 4);
+        uint32_t sz = (uint32_t)input.size();
+        for (int i=0; i<4; i++) res[4+i] = (sz >> (i*8)) & 0xFF;
+        if (::compress(res.data()+8, &cL, input.data(), input.size()) != Z_OK) return input;
+        res.resize(8 + cL);
+        return res;
+    }
     static vector<unsigned char> decompress(const vector<unsigned char>& input) {
-        vector<unsigned char> out;
-        if (input.size() < 8 || input[0] != 'C' || input[1] != 'V' || input[2] != 'Z' || input[3] != 1) {
-            return out; // Invalid or uncompressed format
-        }
-        
-        // Read original size
+        if (input.size() < 8 || memcmp(input.data(), "CVZ\x01", 4) != 0) return {};
         uint32_t sz = 0;
-        for (int i = 0; i < 4; i++) sz |= ((uint32_t)input[4 + i]) << (i * 8);
-        
-        // Decompress using zlib
-        out.resize(sz);
-        uLongf destLen = sz;
-        if (uncompress(out.data(), &destLen, input.data() + 8, input.size() - 8) != Z_OK) {
-            cerr << "Error: zlib decompression failed." << endl;
-            return {};
-        }
-        
-        if (destLen != sz) {
-             cerr << "Warning: Decompressed size does not match expected size." << endl;
-             out.resize(destLen);
-        }
-        return out;
+        for (int i=0; i<4; i++) sz |= ((uint32_t)input[4+i]) << (i*8);
+        vector<unsigned char> res(sz);
+        uLongf dL = sz;
+        if (uncompress(res.data(), &dL, input.data() + 8, input.size() - 8) != Z_OK) return {};
+        res.resize(dL);
+        return res;
     }
-    
     static bool isCompressed(const vector<unsigned char>& d) {
-        return d.size() >= 4 && d[0] == 'C' && d[1] == 'V' && d[2] == 'Z' && d[3] == 1;
+        return d.size() >= 4 && memcmp(d.data(), "CVZ\x01", 4) == 0;
     }
 };
 
@@ -1389,36 +1604,54 @@ private:
     // ─── Directory Encryption ────────────────────────────────
     void encryptDirectory() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m", RED = "\033[38;5;196m";
-        const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
+        const string GRAY = "\033[38;5;245m", RESET = "\033[0m", YELLOW = "\033[38;5;220m";
         cout << CYAN << "\n  --- ENCRYPT DIRECTORY ---\n" << RESET << endl;
         string dirPath;
         cout << GRAY << "  directory path -> " << RESET; getLineTrim(dirPath); stripQuotes(dirPath);
         if (!FsCompat::exists(dirPath) || !FsCompat::is_directory(dirPath)) {
             cerr << "\n  Error: '" << dirPath << "' is not a valid directory" << endl; return;
         }
+
+        cout << GRAY << "  Shred source files after encryption? (y/n): " << RESET;
+        string shredChoice; getLineTrim(shredChoice);
+        bool shouldShred = (shredChoice == "y" || shredChoice == "Y");
+
         string pw = getPasswordWithConfirmation();
         if (pw.empty()) return;
         cipher.setKey(pw);
         int total = 0, ok = 0;
         auto start = chrono::high_resolution_clock::now();
         vector<string> files; FsCompat::get_files_recursive(dirPath, files);
+        
+        cout << GRAY << "\n  Found " << files.size() << " items. Processing..." << RESET << endl;
         for (const string& fpath : files) {
-
             if (FileHelper::hasEncExtension(fpath)) continue;
+            
+            // Skip common junk files
+            string base = fpath.substr(fpath.find_last_of("\\/") + 1);
+            if (base == ".DS_Store" || base == "Thumbs.db" || base == "desktop.ini") continue;
+
             total++;
             string outPath = FileHelper::addEncExtension(fpath);
+            
+            cout << "\n  [" << ok+1 << "/" << total << "] Encrypting: " << base << endl;
             if (cipher.encryptFile(fpath, outPath)) {
-                cout << GREEN << "  + " << RESET << fpath << " -> " << outPath << endl;
                 string fHash = cipher.hashFile(fpath);
                 struct stat st; long long fSize = (stat(fpath.c_str(), &st)==0) ? st.st_size : 0;
                 encLog.log("DIR_ENCRYPT", fpath, fSize, 0, true);
                 logEncryption(blockchain, fpath, fHash, fSize, 0, true);
+                
+                if (shouldShred) {
+                    SecureDelete::shredFile(fpath, config.getInt("shred_passes"));
+                }
                 ok++;
+            } else {
+                cerr << RED << "  FAILED: " << fpath << RESET << endl;
             }
         }
         auto end = chrono::high_resolution_clock::now();
         double elapsed = chrono::duration<double>(end - start).count();
-        cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files encrypted in "
+        cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files processed in "
              << fixed << setprecision(2) << elapsed << "s" << endl;
     }
     void decryptDirectory() {
@@ -1430,26 +1663,39 @@ private:
         if (!FsCompat::exists(dirPath) || !FsCompat::is_directory(dirPath)) {
             cerr << "\n  Error: '" << dirPath << "' is not a valid directory" << endl; return;
         }
+
+        cout << GRAY << "  Delete encrypted files after success? (y/n): " << RESET;
+        string deleteChoice; getLineTrim(deleteChoice);
+        bool shouldDelete = (deleteChoice == "y" || deleteChoice == "Y");
+
         string pw = getPassword();
         if (pw.empty()) return;
         cipher.setKey(pw);
         int total = 0, ok = 0;
         auto start = chrono::high_resolution_clock::now();
         vector<string> files; FsCompat::get_files_recursive(dirPath, files);
+        
+        cout << GRAY << "\n  Found " << files.size() << " items. Processing..." << RESET << endl;
         for (const string& fpath : files) {
-
             if (!FileHelper::hasEncExtension(fpath)) continue;
             total++;
+            string base = fpath.substr(fpath.find_last_of("\\/") + 1);
             string outPath = FileHelper::removeEncExtension(fpath);
+            
+            cout << "\n  [" << ok+1 << "/" << total << "] Decrypting: " << base << endl;
             if (cipher.decryptFile(fpath, outPath)) {
-                cout << GREEN << "  + " << RESET << fpath << " -> " << outPath << endl;
                 encLog.log("DIR_DECRYPT", fpath, 0, 0, true);
+                if (shouldDelete) {
+                    SecureDelete::shredFile(fpath, 1); // Fast shred for .enc files
+                }
                 ok++;
+            } else {
+                 cerr << RED << "  FAILED: " << fpath << RESET << endl;
             }
         }
         auto end = chrono::high_resolution_clock::now();
         double elapsed = chrono::duration<double>(end - start).count();
-        cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files decrypted in "
+        cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files processed in "
              << fixed << setprecision(2) << elapsed << "s" << endl;
     }
     // ─── Secure Delete ───────────────────────────────────────
@@ -1846,16 +2092,21 @@ int main(int argc, char* argv[]) {
         string cmd = argv[1];
         
         if (cmd == "--help" || cmd == "-h") {
-            cout << "CryptVault CLI Usage:\n"
-                 << "  --encrypt <file> [-p <password>] [-o <output>]\n"
-                 << "  --decrypt <file> [-p <password>] [-o <output>]\n"
-                 << "  --encrypt-dir <dir> [-p <password>]\n"
-                 << "  --decrypt-dir <dir> [-p <password>]\n"
-                 << "  --shred <file>\n"
-                 << "  --hash <file>\n"
-                 << "  --benchmark\n"
-                 << "  --keygen <file>\n"
-                 << "  --genpass [length]\n";
+             cout << "CryptVault CLI Usage:\n"
+                  << "  --encrypt <file> [-p <password>] [-o <output>]\n"
+                  << "  --decrypt <file> [-p <password>] [-o <output>]\n"
+                  << "  --compress <file> [-p <password>] [-o <output>]\n"
+                  << "  --preview <file> [-p <password>]\n"
+                  << "  --encrypt-dir <dir> [-p <password>]\n"
+                  << "  --decrypt-dir <dir> [-p <password>]\n"
+                  << "  --batch-enc <file1,file2,...> [-p <password>]\n"
+                  << "  --batch-dec <file1,file2,...> [-p <password>]\n"
+                  << "  --shred <file> [--passes <n>]\n"
+                  << "  --hash <file>\n"
+                  << "  --stats <file>\n"
+                  << "  --benchmark\n"
+                  << "  --keygen <file>\n"
+                  << "  --genpass [length]\n";
             return 0;
         }
         
@@ -1872,12 +2123,20 @@ int main(int argc, char* argv[]) {
         }
         if (cmd == "--shred" && argc > 2) {
             string file = argv[2];
-            return SecureDelete::shredFile(file, 3) ? 0 : 1;
+            int passes = 3;
+            for (int i = 3; i < argc; i++) {
+                if (string(argv[i]) == "--passes" && i + 1 < argc) passes = stoi(argv[++i]);
+            }
+            return SecureDelete::shredFile(file, passes) ? 0 : 1;
         }
         if (cmd == "--hash" && argc > 2) {
             string hash = cipher.hashFile(argv[2]);
             if (!hash.empty()) { cout << hash << endl; return 0; }
             return 1;
+        }
+        if (cmd == "--stats" && argc > 2) {
+            cipher.showFileStats(argv[2]);
+            return 0;
         }
         if (cmd == "--keygen" && argc > 2) {
             return KeyFileManager::generateKeyFile(argv[2]) ? 0 : 1;
@@ -1899,11 +2158,42 @@ int main(int argc, char* argv[]) {
                 if (out.empty()) out = target + ".dec";
                 return cipher.decryptFile(target, out) ? 0 : 1;
             }
+            if (cmd == "--compress") {
+                if (out.empty()) out = target + ".cvz";
+                string tmp = target + ".tmp_c";
+                if (!SimpleCompressor::compressFile(target, tmp)) return 1;
+                bool ok = cipher.encryptFile(tmp, out);
+                remove(tmp.c_str());
+                return ok ? 0 : 1;
+            }
+            if (cmd == "--preview") {
+                string tmp = target + ".tmp_p";
+                if (!cipher.decryptFile(target, tmp)) { remove(tmp.c_str()); return 1; }
+                ifstream f(tmp, ios::binary);
+                if (f.is_open()) {
+                    vector<unsigned char> data(1024);
+                    f.read((char*)data.data(), 1024);
+                    size_t bytes = (size_t)f.gcount();
+                    f.close();
+                    
+                    bool isBinary = false;
+                    for (size_t i = 0; i < min(bytes, (size_t)512); i++) if (data[i] == 0) { isBinary = true; break; }
+                    
+                    if (isBinary) {
+                        for (size_t i = 0; i < min(bytes, (size_t)256); i++) 
+                            cout << hex << setw(2) << setfill('0') << (int)data[i] << (i % 16 == 15 ? "\n" : " ");
+                    } else {
+                        cout << string((char*)data.data(), min(bytes, (size_t)1024)) << endl;
+                    }
+                }
+                remove(tmp.c_str());
+                return 0;
+            }
             if (cmd == "--encrypt-dir") {
                 int ok=0;
                 vector<string> files; FsCompat::get_files_recursive(target, files);
                 for (const auto& f : files) {
-                    if (FsCompat::extension(f) != ".enc") {
+                    if (!FileHelper::hasEncExtension(f)) {
                         if (cipher.encryptFile(f, f + ".enc")) ok++;
                     }
                 }
@@ -1913,12 +2203,20 @@ int main(int argc, char* argv[]) {
                 int ok=0;
                 vector<string> files; FsCompat::get_files_recursive(target, files);
                 for (const auto& f : files) {
-                    if (FsCompat::extension(f) == ".enc") {
-                        string dec = f; dec = dec.substr(0, dec.length()-4);
+                    if (FileHelper::hasEncExtension(f)) {
+                        string dec = FileHelper::removeEncExtension(f);
                         if (cipher.decryptFile(f, dec)) ok++;
                     }
                 }
                 return ok > 0 ? 0 : 1;
+            }
+            if (cmd == "--batch-enc" || cmd == "--batch-dec") {
+                stringstream ss(target); string f;
+                while (getline(ss, f, ',')) {
+                    if (cmd == "--batch-enc") cipher.encryptFile(f, f + ".enc");
+                    else cipher.decryptFile(f, FileHelper::removeEncExtension(f));
+                }
+                return 0;
             }
         }
         cerr << "Unknown command." << endl; return 1;
