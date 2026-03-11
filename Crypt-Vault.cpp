@@ -22,12 +22,8 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
-<<<<<<< Updated upstream
-#include <experimental/filesystem>
-#include <numeric>
-
-namespace fs = std::experimental::filesystem;
-=======
+#include <cmath>
+#include <map>
 #include <numeric>
 
 // Polyfill for C++17 <filesystem> using native Win32 API to support GCC 6.3.0
@@ -66,7 +62,6 @@ struct FsCompat {
 #endif
     }
 };
->>>>>>> Stashed changes
 
 #ifdef _WIN32
 #include <windows.h>
@@ -845,7 +840,7 @@ public:
     void save() {
         ofstream f(configFile); if (!f.is_open()) return;
         f << "# CryptVault Configuration\n\n";
-        for (const auto& [k,v] : settings) f << k << " = " << v << "\n";
+        for (const auto& pair : settings) f << pair.first << " = " << pair.second << "\n";
     }
     string get(const string& k) const { auto it=settings.find(k); return it!=settings.end()?it->second:""; }
     int getInt(const string& k) const { try{return stoi(get(k));}catch(...){return 0;} }
@@ -854,7 +849,7 @@ public:
     void display() const {
         cout << "\n  --- CURRENT SETTINGS ---\n" << endl;
         int i=1;
-        for (const auto& [k,v] : settings) cout << "  " << i++ << "  " << setw(22) << left << k << v << endl;
+        for (const auto& pair : settings) cout << "  " << i++ << "  " << setw(22) << left << pair.first << pair.second << endl;
         cout << endl;
     }
     const map<string,string>& getAll() const { return settings; }
@@ -1134,7 +1129,7 @@ public:
     void save() {
         ofstream f(configFile); if (!f.is_open()) return;
         f << "# CryptVault Configuration\n\n";
-        for (const auto& [k,v] : settings) f << k << " = " << v << "\n";
+        for (const auto& pair : settings) f << pair.first << " = " << pair.second << "\n";
     }
     string get(const string& k) const { auto it=settings.find(k); return it!=settings.end()?it->second:""; }
     int getInt(const string& k) const { try{return stoi(get(k));}catch(...){return 0;} }
@@ -1143,7 +1138,7 @@ public:
     void display() const {
         cout << "\n  --- CURRENT SETTINGS ---\n" << endl;
         int i=1;
-        for (const auto& [k,v] : settings) cout << "  " << i++ << "  " << setw(22) << left << k << v << endl;
+        for (const auto& pair : settings) cout << "  " << i++ << "  " << setw(22) << left << pair.first << pair.second << endl;
         cout << endl;
     }
     const map<string,string>& getAll() const { return settings; }
@@ -1222,8 +1217,6 @@ class CryptVaultApp {
 private:
     AESCipher cipher;
     CryptVaultBlockchain blockchain;  // Blockchain audit logging
-    Config config;
-    EncryptionLog encLog;
     Config config;
     EncryptionLog encLog;
     void getLineTrim(string& s) {
@@ -1673,7 +1666,7 @@ private:
                 if (i % 16 == 0) cout << "  " << hex << setw(8) << setfill('0') << i << "  ";
                 cout << hex << setw(2) << setfill('0') << (int)dec[i] << " ";
             }
-            cout << dec << endl;
+            cout << "\n"; // dec isn't printable directly, and clashes with std::dec
         } else {
             int lines = 0;
             for (size_t i = 0; i < dec.size() && lines < 50; i++) {
@@ -1894,7 +1887,7 @@ private:
                 if (i % 16 == 0) cout << "  " << hex << setw(8) << setfill('0') << i << "  ";
                 cout << hex << setw(2) << setfill('0') << (int)dec[i] << " ";
             }
-            cout << dec << endl;
+            cout << "\n"; // dec isn't printable directly, and clashes with std::dec
         } else {
             int lines = 0;
             for (size_t i = 0; i < dec.size() && lines < 50; i++) {
@@ -2131,16 +2124,6 @@ public:
                 case 20: encLog.display(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 21: settingsMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-                case 13: encryptDirectory(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 14: decryptDirectory(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 15: secureDeleteMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 16: compressAndEncrypt(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 17: decryptPreview(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 18: generateKeyFileMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 19: generatePasswordMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 20: encLog.display(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 21: settingsMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
 
                 default:
                     cout << RED << "\n  ✗ Invalid choice! Please select 1-25." << RESET << endl;
