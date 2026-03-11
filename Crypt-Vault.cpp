@@ -42,6 +42,9 @@
 #include <numeric>
 
 namespace fs = std::filesystem;
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 #ifdef _WIN32
