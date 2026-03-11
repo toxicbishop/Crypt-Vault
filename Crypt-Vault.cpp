@@ -1049,7 +1049,7 @@ private:
         displayBanner();
 
         cout << GRAY << "  Type a " << CYAN << "number" << GRAY << " to select a command" << RESET << endl;
-        cout << GRAY << "  Press " << CYAN << "13" << GRAY << " to exit the application" << RESET << endl;
+        cout << GRAY << "  Press " << CYAN << "25" << GRAY << " to exit the application" << RESET << endl;
         cout << endl;
         cout << GREEN << "  →" << RESET << endl;
         cout << endl;
@@ -1565,7 +1565,7 @@ public:
             }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-            if (choice == 13) { 
+            if (choice == 25) { 
                 cout << CYAN << "\n  ✓ Thank you for using Crypt Vault. Goodbye!\n" << RESET << endl;
                 break; 
             }
@@ -1691,8 +1691,19 @@ public:
 
                 case 12: showAbout(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
+                case 13: encryptDirectory(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 14: decryptDirectory(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 15: secureDeleteMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 16: compressAndEncrypt(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 17: decryptPreview(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 18: generateKeyFileMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 19: generatePasswordMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 20: encLog.display(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 21: settingsMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+
                 default:
-                    cout << RED << "\n  ✗ Invalid choice! Please select 1-13." << RESET << endl;
+                    cout << RED << "\n  ✗ Invalid choice! Please select 1-25." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
             }
         }
