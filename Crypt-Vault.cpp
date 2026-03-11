@@ -25,12 +25,6 @@
 #include <filesystem>
 #include <map>
 #include <numeric>
-
-namespace fs = std::filesystem;
-#include <chrono>
-#include <filesystem>
-#include <map>
-#include <numeric>
 namespace fs = std::filesystem;
 #ifdef _WIN32
 #include <windows.h>
@@ -593,11 +587,9 @@ public:
 // P2P Network Server
 // ═══════════════════════════════════════════════════════════
 // P2P logic is implemented in p2p_node.cpp / network_layer.h
-
 // ═══════════════════════════════════════════════════════════
 // Progress Bar
 // ═══════════════════════════════════════════════════════════
-
 class ProgressBar {
     size_t total, current;
     int barWidth;
@@ -629,11 +621,9 @@ public:
         cout << "] 100% | " << fixed << setprecision(1) << speed << " MB/s | Done!     " << endl;
     }
 };
-
 // ═══════════════════════════════════════════════════════════
 // Secure Delete (Shred)
 // ═══════════════════════════════════════════════════════════
-
 class SecureDelete {
 public:
     static bool shredFile(const string& filename, int passes = 3) {
@@ -666,11 +656,9 @@ public:
         return remove(filename.c_str()) == 0;
     }
 };
-
 // ═══════════════════════════════════════════════════════════
 // Simple Compressor (RLE, zero dependencies)
 // ═══════════════════════════════════════════════════════════
-
 class SimpleCompressor {
 public:
     static vector<unsigned char> compress(const vector<unsigned char>& input) {
@@ -713,11 +701,9 @@ public:
         return d.size() >= 4 && d[0]=='C' && d[1]=='V' && d[2]=='Z' && d[3]==1;
     }
 };
-
 // ═══════════════════════════════════════════════════════════
 // Key File Manager (2FA Support)
 // ═══════════════════════════════════════════════════════════
-
 class KeyFileManager {
 public:
     static bool generateKeyFile(const string& filename) {
@@ -745,11 +731,9 @@ public:
         return combined;
     }
 };
-
 // ═══════════════════════════════════════════════════════════
 // Password Generator
 // ═══════════════════════════════════════════════════════════
-
 class PasswordGenerator {
 public:
     static string generate(int length = 24) {
@@ -777,11 +761,9 @@ public:
         return cs > 0 ? p.length() * log2(cs) : 0;
     }
 };
-
 // ═══════════════════════════════════════════════════════════
 // Config File
 // ═══════════════════════════════════════════════════════════
-
 class Config {
     map<string, string> settings;
     string configFile;
@@ -822,11 +804,9 @@ public:
     }
     const map<string,string>& getAll() const { return settings; }
 };
-
 // ═══════════════════════════════════════════════════════════
 // Encryption Log / History
 // ═══════════════════════════════════════════════════════════
-
 class EncryptionLog {
     string logFile;
 public:
@@ -850,11 +830,9 @@ public:
         cout << endl;
     }
 };
-
 // ═══════════════════════════════════════════════════════════
 // Performance Benchmarks
 // ═══════════════════════════════════════════════════════════
-
 void runBenchmarks() {
     cout << "\n  --- PERFORMANCE BENCHMARKS ---\n" << endl;
     AESCipher bc; bc.setKey("BenchmarkPassword123!@#");
@@ -893,7 +871,6 @@ void runBenchmarks() {
     cout << "  HMAC-SHA256 (1 MB): " << fixed << setprecision(1) << hMs << " ms ("
          << (1.0/(hMs/1000.0)) << " MB/s)" << endl << endl;
 }
-
 // ═══════════════════════════════════════════════════════════
 // Application Class
 // ═══════════════════════════════════════════════════════════
@@ -1184,7 +1161,6 @@ private:
                 break;
         }
     }
-
     // ─── Directory Encryption ────────────────────────────────
     void encryptDirectory() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
@@ -1220,7 +1196,6 @@ private:
         cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files encrypted in "
              << fixed << setprecision(2) << elapsed << "s" << endl;
     }
-
     void decryptDirectory() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
         const string GRAY = "\033[38;5;245m", RESET = "\033[0m";
@@ -1252,7 +1227,6 @@ private:
         cout << GREEN << "\n  Done! " << RESET << ok << "/" << total << " files decrypted in "
              << fixed << setprecision(2) << elapsed << "s" << endl;
     }
-
     // ─── Secure Delete ───────────────────────────────────────
     void secureDeleteMenu() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
@@ -1279,7 +1253,6 @@ private:
             cerr << RED << "\n  Shredding failed!" << RESET << endl;
         }
     }
-
     // ─── Compress + Encrypt ──────────────────────────────────
     void compressAndEncrypt() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
@@ -1308,7 +1281,6 @@ private:
         cout << GREEN << "\n  Saved: " << outFile << RESET << endl;
         encLog.log("COMPRESS_ENC", filename, origSize, 0, true);
     }
-
     // ─── Decrypt Preview ─────────────────────────────────────
     void decryptPreview() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
@@ -1351,7 +1323,6 @@ private:
         cout << "  " << string(50, '-') << endl;
         secure_memzero(dec.data(), dec.size());
     }
-
     // ─── Key File Generation ─────────────────────────────────
     void generateKeyFileMenu() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
@@ -1367,7 +1338,6 @@ private:
             cerr << "\n  Failed to generate key file" << endl;
         }
     }
-
     // ─── Password Generator Menu ─────────────────────────────
     void generatePasswordMenu() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
@@ -1390,7 +1360,6 @@ private:
         else strength = "Excellent";
         cout << GRAY << "  Strength: " << strength << RESET << endl;
     }
-
     // ─── Settings Menu ───────────────────────────────────────
     void settingsMenu() {
         const string CYAN = "\033[38;5;44m", GREEN = "\033[38;5;82m";
@@ -1407,7 +1376,6 @@ private:
         config.save();
         cout << GREEN << "  Updated: " << key << " = " << val << RESET << endl;
     }
-
 
     void showAbout() {
         cout << "\n📚 ABOUT CRYPT VAULT" << endl;
@@ -1576,7 +1544,6 @@ public:
                 case 20: encLog.display(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 21: settingsMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-
                 default:
                     cout << RED << "\n  ✗ Invalid choice! Please select 1-25." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
@@ -1627,7 +1594,6 @@ int main(int argc, char* argv[]) {
         if (cmd == "--keygen" && argc > 2) {
             return KeyFileManager::generateKeyFile(argv[2]) ? 0 : 1;
         }
-
         if (cmd == "--encrypt" || cmd == "--decrypt" || cmd == "--encrypt-dir" || cmd == "--decrypt-dir") {
             if (argc < 3) { cerr << "Missing target" << endl; return 1; }
             string target = argv[2], pw, out;
@@ -1637,7 +1603,6 @@ int main(int argc, char* argv[]) {
             }
             if (pw.empty()) { cerr << "Password required (-p <password>)" << endl; return 1; }
             cipher.setKey(pw);
-
             if (cmd == "--encrypt") {
                 if (out.empty()) out = target + ".enc";
                 return cipher.encryptFile(target, out) ? 0 : 1;
