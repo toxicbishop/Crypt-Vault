@@ -2123,17 +2123,6 @@ public:
                 case 20: encLog.display(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 21: settingsMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-                case 13: encryptDirectory(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 14: decryptDirectory(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 15: secureDeleteMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 16: compressAndEncrypt(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 17: decryptPreview(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 18: generateKeyFileMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 19: generatePasswordMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 20: encLog.display(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 21: settingsMenu(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-                case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter..." << RESET; cin.get(); break;
-
                 default:
                     cout << RED << "\n  ✗ Invalid choice! Please select 1-25." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
