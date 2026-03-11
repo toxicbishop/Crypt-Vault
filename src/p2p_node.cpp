@@ -22,10 +22,10 @@
  * ================================================================
  */
 
-#include "p2p_node.h"
-#include "network_layer.h"
-#include "node_identity.h"
-#include "blockchain_audit.h"   // your existing blockchain code
+#include "../include/p2p_node.h"
+#include "../include/network_layer.h"
+#include "../include/node_identity.h"
+#include "../include/blockchain_audit.h"   // your existing blockchain code
 
 #include <iostream>
 #include <fstream>
