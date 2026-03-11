@@ -1712,7 +1712,88 @@ public:
 };
 
 // Program Entry Point
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc > 1) {
+        string cmd = argv[1];
+        
+        if (cmd == "--help" || cmd == "-h") {
+            cout << "CryptVault CLI Usage:\n"
+                 << "  --encrypt <file> [-p <password>] [-o <output>]\n"
+                 << "  --decrypt <file> [-p <password>] [-o <output>]\n"
+                 << "  --encrypt-dir <dir> [-p <password>]\n"
+                 << "  --decrypt-dir <dir> [-p <password>]\n"
+                 << "  --shred <file>\n"
+                 << "  --hash <file>\n"
+                 << "  --benchmark\n"
+                 << "  --keygen <file>\n"
+                 << "  --genpass [length]\n";
+            return 0;
+        }
+        
+        AESCipher cipher;
+        
+        if (cmd == "--genpass") {
+            int len = (argc > 2) ? stoi(argv[2]) : 24;
+            cout << PasswordGenerator::generate(len) << endl;
+            return 0;
+        }
+        if (cmd == "--benchmark") {
+            runBenchmarks();
+            return 0;
+        }
+        if (cmd == "--shred" && argc > 2) {
+            string file = argv[2];
+            return SecureDelete::shredFile(file, 3) ? 0 : 1;
+        }
+        if (cmd == "--hash" && argc > 2) {
+            string hash = cipher.hashFile(argv[2]);
+            if (!hash.empty()) { cout << hash << endl; return 0; }
+            return 1;
+        }
+        if (cmd == "--keygen" && argc > 2) {
+            return KeyFileManager::generateKeyFile(argv[2]) ? 0 : 1;
+        }
+
+        if (cmd == "--encrypt" || cmd == "--decrypt" || cmd == "--encrypt-dir" || cmd == "--decrypt-dir") {
+            if (argc < 3) { cerr << "Missing target" << endl; return 1; }
+            string target = argv[2], pw, out;
+            for (int i = 3; i < argc; i++) {
+                if (string(argv[i]) == "-p" && i + 1 < argc) pw = argv[++i];
+                if (string(argv[i]) == "-o" && i + 1 < argc) out = argv[++i];
+            }
+            if (pw.empty()) { cerr << "Password required (-p <password>)" << endl; return 1; }
+            cipher.setKey(pw);
+
+            if (cmd == "--encrypt") {
+                if (out.empty()) out = target + ".enc";
+                return cipher.encryptFile(target, out) ? 0 : 1;
+            }
+            if (cmd == "--decrypt") {
+                if (out.empty()) out = target + ".dec";
+                return cipher.decryptFile(target, out) ? 0 : 1;
+            }
+            if (cmd == "--encrypt-dir") {
+                int ok=0;
+                for (auto& e : fs::recursive_directory_iterator(target)) {
+                    if (e.is_regular_file() && e.path().extension() != ".enc") {
+                        if (cipher.encryptFile(e.path().string(), e.path().string() + ".enc")) ok++;
+                    }
+                }
+                return ok > 0 ? 0 : 1;
+            }
+            if (cmd == "--decrypt-dir") {
+                int ok=0;
+                for (auto& e : fs::recursive_directory_iterator(target)) {
+                    if (e.is_regular_file() && e.path().extension() == ".enc") {
+                        string d = e.path().string(); d = d.substr(0, d.length()-4);
+                        if (cipher.decryptFile(e.path().string(), d)) ok++;
+                    }
+                }
+                return ok > 0 ? 0 : 1;
+            }
+        }
+        cerr << "Unknown command." << endl; return 1;
+    }
     CryptVaultApp app;
     app.run();
     return 0;
