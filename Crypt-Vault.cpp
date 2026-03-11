@@ -671,6 +671,307 @@ public:
 // P2P logic is implemented in p2p_node.cpp / network_layer.h
 
 // ═══════════════════════════════════════════════════════════
+// Progress Bar
+// ═══════════════════════════════════════════════════════════
+
+class ProgressBar {
+    size_t total, current;
+    int barWidth;
+    chrono::steady_clock::time_point startTime;
+public:
+    ProgressBar(size_t t, int w = 40) : total(t), current(0), barWidth(w) {
+        startTime = chrono::steady_clock::now();
+    }
+    void update(size_t bytes) {
+        current += bytes;
+        if (total == 0) return;
+        double frac = (double)current / total;
+        int filled = (int)(frac * barWidth);
+        auto now = chrono::steady_clock::now();
+        double elapsed = chrono::duration<double>(now - startTime).count();
+        double speed = elapsed > 0 ? (current / 1048576.0) / elapsed : 0;
+        double eta = speed > 0 && current < total ? ((total - current) / 1048576.0) / speed : 0;
+        cout << "\r  [";
+        for (int i = 0; i < barWidth; i++) cout << (i < filled ? "#" : ".");
+        cout << "] " << (int)(frac * 100) << "% | "
+             << fixed << setprecision(1) << speed << " MB/s | ETA " << (int)eta << "s" << flush;
+    }
+    void finish() {
+        auto now = chrono::steady_clock::now();
+        double elapsed = chrono::duration<double>(now - startTime).count();
+        double speed = elapsed > 0 ? (total / 1048576.0) / elapsed : 0;
+        cout << "\r  [";
+        for (int i = 0; i < barWidth; i++) cout << "#";
+        cout << "] 100% | " << fixed << setprecision(1) << speed << " MB/s | Done!     " << endl;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Secure Delete (Shred)
+// ═══════════════════════════════════════════════════════════
+
+class SecureDelete {
+public:
+    static bool shredFile(const string& filename, int passes = 3) {
+        struct stat st;
+        if (stat(filename.c_str(), &st) != 0) {
+            cerr << "\n  Error: Cannot access '" << filename << "'" << endl;
+            return false;
+        }
+        long long fileSize = st.st_size;
+        fstream file(filename, ios::in | ios::out | ios::binary);
+        if (!file.is_open()) return false;
+        vector<unsigned char> buffer(min((long long)65536, fileSize));
+        ProgressBar progress(fileSize * passes, 30);
+        for (int pass = 0; pass < passes; pass++) {
+            file.seekp(0, ios::beg);
+            long long remaining = fileSize;
+            while (remaining > 0) {
+                size_t chunk = min((size_t)remaining, buffer.size());
+                if (pass == 0) memset(buffer.data(), 0x00, chunk);
+                else if (pass == 1) memset(buffer.data(), 0xFF, chunk);
+                else generateRandomBytes(buffer.data(), chunk);
+                file.write((char*)buffer.data(), chunk);
+                file.flush();
+                remaining -= chunk;
+                progress.update(chunk);
+            }
+        }
+        progress.finish();
+        file.close();
+        return remove(filename.c_str()) == 0;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Simple Compressor (RLE, zero dependencies)
+// ═══════════════════════════════════════════════════════════
+
+class SimpleCompressor {
+public:
+    static vector<unsigned char> compress(const vector<unsigned char>& input) {
+        vector<unsigned char> out;
+        if (input.empty()) return out;
+        out.push_back('C'); out.push_back('V'); out.push_back('Z'); out.push_back(1);
+        uint32_t sz = (uint32_t)input.size();
+        for (int i = 0; i < 4; i++) out.push_back((sz >> (i*8)) & 0xFF);
+        size_t i = 0;
+        while (i < input.size()) {
+            size_t run = 1;
+            while (i+run < input.size() && input[i+run] == input[i] && run < 255) run++;
+            if (run >= 4) {
+                out.push_back(0x00); out.push_back(input[i]); out.push_back((unsigned char)run);
+                i += run;
+            } else {
+                if (input[i] == 0x00) { out.push_back(0x00); out.push_back(0x00); out.push_back(1); }
+                else out.push_back(input[i]);
+                i++;
+            }
+        }
+        return out;
+    }
+    static vector<unsigned char> decompress(const vector<unsigned char>& input) {
+        vector<unsigned char> out;
+        if (input.size() < 8 || input[0]!='C' || input[1]!='V' || input[2]!='Z') return out;
+        uint32_t sz = 0;
+        for (int i = 0; i < 4; i++) sz |= ((uint32_t)input[4+i]) << (i*8);
+        out.reserve(sz);
+        size_t i = 8;
+        while (i < input.size() && out.size() < sz) {
+            if (input[i] == 0x00 && i+2 < input.size()) {
+                for (int j = 0; j < input[i+2]; j++) out.push_back(input[i+1]);
+                i += 3;
+            } else { out.push_back(input[i]); i++; }
+        }
+        return out;
+    }
+    static bool isCompressed(const vector<unsigned char>& d) {
+        return d.size() >= 4 && d[0]=='C' && d[1]=='V' && d[2]=='Z' && d[3]==1;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Key File Manager (2FA Support)
+// ═══════════════════════════════════════════════════════════
+
+class KeyFileManager {
+public:
+    static bool generateKeyFile(const string& filename) {
+        unsigned char kd[32];
+        if (!generateRandomBytes(kd, 32)) return false;
+        ofstream f(filename, ios::binary);
+        if (!f.is_open()) return false;
+        f.write("CVKF", 4); f.write((char*)kd, 32); f.close();
+        secure_memzero(kd, 32);
+        return true;
+    }
+    static vector<unsigned char> readKeyFile(const string& filename) {
+        ifstream f(filename, ios::binary);
+        if (!f.is_open()) return {};
+        char magic[4]; f.read(magic, 4);
+        if (string(magic, 4) != "CVKF") return {};
+        vector<unsigned char> kd(32);
+        f.read((char*)kd.data(), 32); f.close();
+        return kd;
+    }
+    static string combineWithPassword(const string& pw, const vector<unsigned char>& kf) {
+        auto h = SHA256Impl::hash(kf.data(), kf.size());
+        string combined = pw;
+        for (auto b : h) combined += (char)b;
+        return combined;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Password Generator
+// ═══════════════════════════════════════════════════════════
+
+class PasswordGenerator {
+public:
+    static string generate(int length = 24) {
+        string cs = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}|;:,.<>?";
+        string pw(length, ' ');
+        vector<unsigned char> rnd(length);
+        generateRandomBytes(rnd.data(), length);
+        for (int i = 0; i < length; i++) pw[i] = cs[rnd[i] % cs.size()];
+        unsigned char r;
+        if (length >= 4) {
+            generateRandomBytes(&r, 1); pw[0] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[r%26];
+            generateRandomBytes(&r, 1); pw[1] = "abcdefghijklmnopqrstuvwxyz"[r%26];
+            generateRandomBytes(&r, 1); pw[2] = "0123456789"[r%10];
+            generateRandomBytes(&r, 1); pw[3] = "!@#$%^&*()-_=+[]{}|;:,.<>?"[r%26];
+        }
+        for (int i = length-1; i > 0; i--) {
+            generateRandomBytes(&r, 1); swap(pw[i], pw[r%(i+1)]);
+        }
+        return pw;
+    }
+    static double entropy(const string& p) {
+        int cs = 0; bool u=0,l=0,d=0,s=0;
+        for (char c : p) { if (isupper(c)) u=1; else if (islower(c)) l=1; else if (isdigit(c)) d=1; else s=1; }
+        if (u) cs+=26; if (l) cs+=26; if (d) cs+=10; if (s) cs+=32;
+        return cs > 0 ? p.length() * log2(cs) : 0;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Config File
+// ═══════════════════════════════════════════════════════════
+
+class Config {
+    map<string, string> settings;
+    string configFile;
+    void setDefaults() {
+        settings["pbkdf2_iterations"]="100000"; settings["shred_passes"]="3";
+        settings["compression"]="off"; settings["auto_shred_source"]="off";
+        settings["password_length"]="24"; settings["show_progress"]="on";
+    }
+public:
+    Config(const string& f = "cryptvault.conf") : configFile(f) { setDefaults(); load(); }
+    void load() {
+        ifstream f(configFile); if (!f.is_open()) return;
+        string line;
+        while (getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            size_t eq = line.find('='); if (eq == string::npos) continue;
+            string k = line.substr(0, eq), v = line.substr(eq+1);
+            while (!k.empty() && k.back()==' ') k.pop_back();
+            while (!v.empty() && v.front()==' ') v = v.substr(1);
+            while (!v.empty() && (v.back()=='\r'||v.back()=='\n'||v.back()==' ')) v.pop_back();
+            if (!k.empty()) settings[k] = v;
+        }
+    }
+    void save() {
+        ofstream f(configFile); if (!f.is_open()) return;
+        f << "# CryptVault Configuration\n\n";
+        for (const auto& [k,v] : settings) f << k << " = " << v << "\n";
+    }
+    string get(const string& k) const { auto it=settings.find(k); return it!=settings.end()?it->second:""; }
+    int getInt(const string& k) const { try{return stoi(get(k));}catch(...){return 0;} }
+    bool getBool(const string& k) const { string v=get(k); return v=="on"||v=="true"||v=="1"; }
+    void set(const string& k, const string& v) { settings[k]=v; }
+    void display() const {
+        cout << "\n  --- CURRENT SETTINGS ---\n" << endl;
+        int i=1;
+        for (const auto& [k,v] : settings) cout << "  " << i++ << "  " << setw(22) << left << k << v << endl;
+        cout << endl;
+    }
+    const map<string,string>& getAll() const { return settings; }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Encryption Log / History
+// ═══════════════════════════════════════════════════════════
+
+class EncryptionLog {
+    string logFile;
+public:
+    EncryptionLog(const string& f = "cryptvault.log") : logFile(f) {}
+    void log(const string& op, const string& fn, long long sz, double ms, bool ok) {
+        ofstream f(logFile, ios::app); if (!f.is_open()) return;
+        auto now = chrono::system_clock::now();
+        time_t t = chrono::system_clock::to_time_t(now);
+        char buf[64]; strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&t));
+        f << "[" << buf << "] " << (ok?"OK   ":"FAIL ") << setw(12) << left << op
+          << " " << fn << " " << sz << "B " << fixed << setprecision(2) << ms << "ms\n";
+    }
+    void display(int mx = 50) {
+        ifstream f(logFile);
+        if (!f.is_open()) { cout << "\n  No log found." << endl; return; }
+        vector<string> lines; string line;
+        while (getline(f, line)) if (!line.empty()) lines.push_back(line);
+        cout << "\n  --- ENCRYPTION LOG (" << lines.size() << " entries) ---\n" << endl;
+        int start = max(0, (int)lines.size() - mx);
+        for (int i = start; i < (int)lines.size(); i++) cout << "  " << lines[i] << endl;
+        cout << endl;
+    }
+};
+
+// ═══════════════════════════════════════════════════════════
+// Performance Benchmarks
+// ═══════════════════════════════════════════════════════════
+
+void runBenchmarks() {
+    cout << "\n  --- PERFORMANCE BENCHMARKS ---\n" << endl;
+    AESCipher bc; bc.setKey("BenchmarkPassword123!@#");
+    struct TC { string name; size_t sz; };
+    vector<TC> tests = {{"1 KB",1024},{"64 KB",65536},{"1 MB",1048576},{"10 MB",10485760}};
+    cout << "  " << setw(12) << left << "Size" << setw(14) << "Encrypt"
+         << setw(14) << "Decrypt" << "Throughput" << endl;
+    cout << "  " << string(52, '-') << endl;
+    for (auto& t : tests) {
+        vector<unsigned char> data(t.sz);
+        generateRandomBytes(data.data(), min(data.size(), (size_t)4096));
+        for (size_t i = 4096; i < data.size(); i++) data[i] = data[i%4096];
+        auto t1 = chrono::high_resolution_clock::now();
+        auto enc = bc.encrypt(data);
+        auto t2 = chrono::high_resolution_clock::now();
+        double eMs = chrono::duration<double, milli>(t2-t1).count();
+        auto t3 = chrono::high_resolution_clock::now();
+        auto dec = bc.decrypt(enc);
+        auto t4 = chrono::high_resolution_clock::now();
+        double dMs = chrono::duration<double, milli>(t4-t3).count();
+        double tp = (t.sz / 1048576.0) / (eMs / 1000.0);
+        cout << "  " << setw(12) << left << t.name << setw(14) << (to_string((int)eMs)+" ms")
+             << setw(14) << (to_string((int)dMs)+" ms") << fixed << setprecision(1) << tp << " MB/s" << endl;
+    }
+    unsigned char salt[16], der[64]; generateRandomBytes(salt, 16);
+    auto p1 = chrono::high_resolution_clock::now();
+    pbkdf2_sha256("BenchmarkPW", salt, 16, 100000, der, 64);
+    auto p2 = chrono::high_resolution_clock::now();
+    cout << "\n  PBKDF2-SHA256 (100k): " << fixed << setprecision(0)
+         << chrono::duration<double,milli>(p2-p1).count() << " ms" << endl;
+    vector<unsigned char> hd(1048576); unsigned char hk[32]; generateRandomBytes(hk, 32);
+    auto h1 = chrono::high_resolution_clock::now();
+    hmac_sha256(hk, 32, hd.data(), hd.size());
+    auto h2 = chrono::high_resolution_clock::now();
+    double hMs = chrono::duration<double,milli>(h2-h1).count();
+    cout << "  HMAC-SHA256 (1 MB): " << fixed << setprecision(1) << hMs << " ms ("
+         << (1.0/(hMs/1000.0)) << " MB/s)" << endl << endl;
+}
+
+
+// ═══════════════════════════════════════════════════════════
 // Application Class
 // ═══════════════════════════════════════════════════════════
 
