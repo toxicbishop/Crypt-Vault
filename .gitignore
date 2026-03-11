@@ -33,3 +33,11 @@ test.txt
 identity.key
 crypt_audit.chain
 peers.txt
+
+# IDE Logic and Cache
+.cache/
+.clangd
+compile_commands.json
+compile_flags.txt
+*.ps1
+gcc_v.txt
