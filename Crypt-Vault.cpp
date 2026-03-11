@@ -38,6 +38,7 @@
 #include <chrono>
 #include <filesystem>
 #include <map>
+<<<<<<< Updated upstream
 #include <random>
 #include <numeric>
 
@@ -48,6 +49,11 @@ namespace fs = std::filesystem;
 =======
 >>>>>>> Stashed changes
 =======
+>>>>>>> Stashed changes
+=======
+#include <numeric>
+
+namespace fs = std::filesystem;
 >>>>>>> Stashed changes
 
 #ifdef _WIN32
