@@ -1489,7 +1489,7 @@ private:
         cout << CYAN << "\n  --- ENCRYPT DIRECTORY ---\n" << RESET << endl;
         string dirPath;
         cout << GRAY << "  directory path -> " << RESET; getLineTrim(dirPath); stripQuotes(dirPath);
-        if (!fs::exists(dirPath) || !fs::is_directory(dirPath)) {
+        if (!FsCompat::exists(dirPath) || !FsCompat::is_directory(dirPath)) {
             cerr << "\n  Error: '" << dirPath << "' is not a valid directory" << endl; return;
         }
         string pw = getPasswordWithConfirmation();
@@ -1497,9 +1497,8 @@ private:
         cipher.setKey(pw);
         int total = 0, ok = 0;
         auto start = chrono::high_resolution_clock::now();
-        for (auto& entry : fs::recursive_directory_iterator(dirPath)) {
-            if (!entry.is_regular_file()) continue;
-            string fpath = entry.path().string();
+        vector<string> files; FsCompat::get_files_recursive(dirPath, files);
+        for (const string& fpath : files) {
             if (FileHelper::hasEncExtension(fpath)) continue;
             total++;
             string outPath = FileHelper::addEncExtension(fpath);
@@ -1523,7 +1522,7 @@ private:
         cout << CYAN << "\n  --- DECRYPT DIRECTORY ---\n" << RESET << endl;
         string dirPath;
         cout << GRAY << "  directory path -> " << RESET; getLineTrim(dirPath); stripQuotes(dirPath);
-        if (!fs::exists(dirPath) || !fs::is_directory(dirPath)) {
+        if (!FsCompat::exists(dirPath) || !FsCompat::is_directory(dirPath)) {
             cerr << "\n  Error: '" << dirPath << "' is not a valid directory" << endl; return;
         }
         string pw = getPassword();
@@ -1531,9 +1530,8 @@ private:
         cipher.setKey(pw);
         int total = 0, ok = 0;
         auto start = chrono::high_resolution_clock::now();
-        for (auto& entry : fs::recursive_directory_iterator(dirPath)) {
-            if (!entry.is_regular_file()) continue;
-            string fpath = entry.path().string();
+        vector<string> files; FsCompat::get_files_recursive(dirPath, files);
+        for (const string& fpath : files) {
             if (!FileHelper::hasEncExtension(fpath)) continue;
             total++;
             string outPath = FileHelper::removeEncExtension(fpath);
@@ -2170,19 +2168,21 @@ int main(int argc, char* argv[]) {
             }
             if (cmd == "--encrypt-dir") {
                 int ok=0;
-                for (auto& e : fs::recursive_directory_iterator(target)) {
-                    if (e.is_regular_file() && e.path().extension() != ".enc") {
-                        if (cipher.encryptFile(e.path().string(), e.path().string() + ".enc")) ok++;
+                vector<string> files; FsCompat::get_files_recursive(target, files);
+                for (const auto& f : files) {
+                    if (FsCompat::extension(f) != ".enc") {
+                        if (cipher.encryptFile(f, f + ".enc")) ok++;
                     }
                 }
                 return ok > 0 ? 0 : 1;
             }
             if (cmd == "--decrypt-dir") {
                 int ok=0;
-                for (auto& e : fs::recursive_directory_iterator(target)) {
-                    if (e.is_regular_file() && e.path().extension() == ".enc") {
-                        string d = e.path().string(); d = d.substr(0, d.length()-4);
-                        if (cipher.decryptFile(e.path().string(), d)) ok++;
+                vector<string> files; FsCompat::get_files_recursive(target, files);
+                for (const auto& f : files) {
+                    if (FsCompat::extension(f) == ".enc") {
+                        string d = f; d = d.substr(0, d.length()-4);
+                        if (cipher.decryptFile(f, d)) ok++;
                     }
                 }
                 return ok > 0 ? 0 : 1;
