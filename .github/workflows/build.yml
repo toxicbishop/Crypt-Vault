@@ -36,14 +36,14 @@ jobs:
           # Create a dummy test file
           Set-Content -Path test.txt -Value "Secure Message 123"
 
-          # Simulate user interactions via Standard Input:
-          # 1) Encrypt test.txt to test.enc with password 'mypassword'
-          # 2) Decrypt test.enc to decrypted.txt with password 'mypassword'
-          # 25) Exit
-          $inputs = "1", "test.txt", "test.enc", "mypassword", "mypassword", "", "2", "test.enc", "decrypted.txt", "mypassword", "", "25"
+          # Use CLI mode to encrypt and decrypt (no interactive menu needed)
+          # --encrypt <input> -p <password> -o <output>
+          .\build\Crypt-Vault.exe --encrypt test.txt -p mypassword -o test.enc
+          if ($LASTEXITCODE -ne 0) { Write-Error "Encryption failed"; exit 1 }
 
-          # Pipe the inputs directly into our newly built executable
-          $inputs | .\build\Crypt-Vault.exe
+          # --decrypt <input> -p <password> -o <output>
+          .\build\Crypt-Vault.exe --decrypt test.enc -p mypassword -o decrypted.txt
+          if ($LASTEXITCODE -ne 0) { Write-Error "Decryption failed"; exit 1 }
 
           Write-Host "`n--- Directory Listing (Debugging) ---"
           dir
