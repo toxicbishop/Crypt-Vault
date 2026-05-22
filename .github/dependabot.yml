@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # 1. Core Project Dependencies (Change "npm" to "pip", "docker", "bundler", etc. if needed)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # 2. GitHub Actions Security Updates (Keeps your CI/CD workflows up-to-date)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
