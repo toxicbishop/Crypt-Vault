@@ -34,6 +34,7 @@
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
 #include <conio.h>  // For _getch() secure password input
+#include <io.h>     // For _isatty() check
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 #endif
@@ -1409,6 +1410,12 @@ private:
     string getSecureInput() {
         string input;
 #ifdef _WIN32
+        if (!_isatty(0)) {
+            if (getline(cin, input)) {
+                return input;
+            }
+            return "";
+        }
         char ch;
         while ((ch = _getch()) != '\r' && ch != '\n') {
             if (ch == '\b' || ch == 127) {  // Backspace
@@ -1423,6 +1430,12 @@ private:
         }
         cout << endl;
 #else
+        if (!isatty(STDIN_FILENO)) {
+            if (getline(cin, input)) {
+                return input;
+            }
+            return "";
+        }
         // POSIX: disable echo
         struct termios oldt, newt;
         tcgetattr(STDIN_FILENO, &oldt);
