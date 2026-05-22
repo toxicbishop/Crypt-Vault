@@ -15,11 +15,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # GCC comes pre-installed on Windows runner via MSYS2
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-zlib
+
       - name: Compile Crypt Vault (C++17)
+        shell: msys2 {0}
         run: |
-          if (!(Test-Path build)) { mkdir build }
-          g++ -o build/Crypt-Vault.exe Crypt-Vault.cpp -std=c++17 -Wall -Wextra -O2 -ladvapi32
+          mkdir -p build
+          g++ -o build/Crypt-Vault.exe src/Crypt-Vault.cpp src/blockchain_audit.cpp src/p2p_node.cpp -std=c++17 -Wall -Wextra -O2 -I include -static -lws2_32 -lz -ladvapi32
 
       - name: Run E2E Encryption/Decryption Test
         shell: powershell
@@ -30,8 +39,8 @@ jobs:
           # Simulate user interactions via Standard Input:
           # 1) Encrypt test.txt to test.enc with password 'mypassword'
           # 2) Decrypt test.enc to decrypted.txt with password 'mypassword'
-          # 11) Exit
-          $inputs = "1", "test.txt", "test.enc", "mypassword", "", "2", "test.enc", "decrypted.txt", "mypassword", "", "11"
+          # 25) Exit
+          $inputs = "1", "test.txt", "test.enc", "mypassword", "mypassword", "", "2", "test.enc", "decrypted.txt", "mypassword", "", "25"
 
           # Pipe the inputs directly into our newly built executable
           $inputs | .\build\Crypt-Vault.exe
