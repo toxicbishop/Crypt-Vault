@@ -53,7 +53,6 @@ std::array<uint8_t, 32> keccak256(const uint8_t* data, size_t len) {
     std::memset(st, 0, sizeof(st));
     uint8_t* st8 = (uint8_t*)st;
     size_t rsiz = 136;
-    size_t rsizw = rsiz / 8;
     
     while (len >= rsiz) {
         for (size_t i = 0; i < rsiz; i++) st8[i] ^= data[i];
