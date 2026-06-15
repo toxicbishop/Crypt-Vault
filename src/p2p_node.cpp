@@ -212,20 +212,20 @@ public:
         sockInit();
         mutexInit(peersMutex);
         
-        string password = "";
+        string authPhrase = "";
         const char* envPass = getenv("CRYPTVAULT_NODE_PASS");
         if (envPass) {
-            password = envPass;
+            authPhrase = envPass;
         } else {
-            password = CLIUtils::getPassword("Enter node passphrase: ");
-            if (password.empty()) {
+            authPhrase = CLIUtils::getPassword("Enter node passphrase: ");
+            if (authPhrase.empty()) {
                 cerr << "  [ID] ERROR: Passphrase is required to start node!" << endl;
                 exit(1);
             }
         }
         
-        identity = initIdentity(password);
-        CLIUtils::secureClear(password);
+        identity = initIdentity(authPhrase);
+        CLIUtils::secureClear(authPhrase);
     }
 
     ~P2PNode() {
