@@ -143,7 +143,7 @@ vector<Block> deserializeChain(const string& data) {
 
 // ── SEND/RECEIVE MESSAGES ────────────────────────────────────
 
-bool sendMsg(socket_t sock, MsgType type, const string& payload) {
+bool sendMsg(SSL* ssl, MsgType type, const string& payload) {
     // Header: [1 byte type][4 bytes length big-endian]
     uint32_t len = (uint32_t)payload.size();
     uint32_t lenBE = htonl(len);
@@ -152,14 +152,14 @@ bool sendMsg(socket_t sock, MsgType type, const string& payload) {
     header[0] = (char)type;
     memcpy(header + 1, &lenBE, 4);
 
-    if (!sendAll(sock, header, 5)) return false;
-    if (len > 0 && !sendAll(sock, payload.c_str(), (int)len)) return false;
+    if (!sslSendAll(ssl, header, 5)) return false;
+    if (len > 0 && !sslSendAll(ssl, payload.c_str(), (int)len)) return false;
     return true;
 }
 
-bool recvMsg(socket_t sock, MsgType& type, string& payload) {
+bool recvMsg(SSL* ssl, MsgType& type, string& payload) {
     char header[5] = {0};
-    if (!recvAll(sock, header, 5)) return false;
+    if (!sslRecvAll(ssl, header, 5)) return false;
 
     type = (MsgType)(uint8_t)header[0];
     uint32_t lenBE;
@@ -174,7 +174,7 @@ bool recvMsg(socket_t sock, MsgType& type, string& payload) {
     }
 
     vector<char> buf(len + 1, 0);
-    if (!recvAll(sock, buf.data(), (int)len)) return false;
+    if (!sslRecvAll(ssl, buf.data(), (int)len)) return false;
     payload = string(buf.data(), len);
     return true;
 }
@@ -183,6 +183,7 @@ bool recvMsg(socket_t sock, MsgType& type, string& payload) {
 
 struct PeerInfo {
     socket_t    sock;
+    SSL*        ssl;
     string      ip;
     int         port;
     string      nodeID;
@@ -210,6 +211,7 @@ public:
           serverSock(INVALID_SOCK), running(false)
     {
         sockInit();
+        sslCtx = initSSLContext();
         mutexInit(peersMutex);
         
         string authPhrase = "";
@@ -231,7 +233,9 @@ public:
     ~P2PNode() {
         stop();
         mutexDestroy(peersMutex);
+        if (sslCtx) SSL_CTX_free(sslCtx);
         sockCleanup();
+        sslCleanup();
     }
 
     // ── START ────────────────────────────────────────────────
@@ -297,7 +301,7 @@ public:
         LockGuard lg(peersMutex);
         for (PeerInfo& p : peers) {
             if (p.connected && sockValid(p.sock)) {
-                if (sendMsg(p.sock, MSG_NEW_BLOCK, payload))
+                if (sendMsg(p.ssl, MSG_NEW_BLOCK, payload))
                     sent++;
             }
         }
@@ -351,8 +355,46 @@ private:
     int                     listenPort;
     socket_t                serverSock;
     bool                    running;
-    std::list<PeerInfo> peers;
+    std::list<PeerInfo>     peers;
     mutex_t                 peersMutex;
+    SSL_CTX*                sslCtx;
+
+    SSL_CTX* initSSLContext() {
+        sslInit();
+        SSL_CTX* ctx = SSL_CTX_new(TLS_method());
+        if (!ctx) return nullptr;
+
+        EVP_PKEY* pkey = nullptr;
+        EVP_PKEY_CTX* pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+        if (pctx) {
+            EVP_PKEY_keygen_init(pctx);
+            EVP_PKEY_CTX_set_rsa_keygen_bits(pctx, 2048);
+            EVP_PKEY_keygen(pctx, &pkey);
+            EVP_PKEY_CTX_free(pctx);
+        }
+
+        if (pkey) {
+            X509* x509 = X509_new();
+            X509_set_version(x509, 2);
+            ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+            X509_gmtime_adj(X509_get_notBefore(x509), 0);
+            X509_gmtime_adj(X509_get_notAfter(x509), 31536000L);
+            X509_set_pubkey(x509, pkey);
+            
+            X509_NAME* name = X509_get_subject_name(x509);
+            X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (unsigned char*)"CryptVault", -1, -1, 0);
+            X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char*)"P2PNode", -1, -1, 0);
+            X509_set_issuer_name(x509, name);
+            X509_sign(x509, pkey, EVP_sha256());
+
+            SSL_CTX_use_certificate(ctx, x509);
+            SSL_CTX_use_PrivateKey(ctx, pkey);
+            
+            X509_free(x509);
+            EVP_PKEY_free(pkey);
+        }
+        return ctx;
+    }
 
     // ── SERVER ───────────────────────────────────────────────
 
@@ -396,14 +438,23 @@ private:
                 continue;
             }
 
+            SSL* ssl = SSL_new(node->sslCtx);
+            SSL_set_fd(ssl, clientSock);
+            if (SSL_accept(ssl) <= 0) {
+                SSL_free(ssl);
+                sockClose(clientSock);
+                continue;
+            }
+
             // Get peer IP
             string peerIP = string(inet_ntoa(clientAddr.sin_addr));
 
-            cout << "  🔌 Incoming connection from " << peerIP << endl;
+            cout << "  🔌 Incoming secure connection from " << peerIP << endl;
 
             // Handle in new thread
             PeerInfo* pi = new PeerInfo();
             pi->sock      = clientSock;
+            pi->ssl       = ssl;
             pi->ip        = peerIP;
             pi->port      = 0;   // unknown until handshake
             pi->connected = true;
@@ -443,14 +494,14 @@ private:
                   + node->identity.publicKey + "|"
                   + node->identity.displayName + "|"
                   + to_string(node->listenPort);
-        sendMsg(peer->sock, MSG_HANDSHAKE, hs);
+        sendMsg(peer->ssl, MSG_HANDSHAKE, hs);
 
         // Step 2: Message loop
         while (node->running && peer->connected) {
             MsgType type;
             string  payload;
 
-            if (!recvMsg(peer->sock, type, payload)) {
+            if (!recvMsg(peer->ssl, type, payload)) {
                 peer->connected = false;
                 cout << "  🔴 Peer disconnected: " << peer->address() << endl;
                 break;
@@ -506,10 +557,10 @@ private:
                        + identity.publicKey + "|"
                        + identity.displayName + "|"
                        + to_string(listenPort);
-            sendMsg(peer->sock, MSG_HANDSHAKE_ACK, ack);
+            sendMsg(peer->ssl, MSG_HANDSHAKE_ACK, ack);
 
             // Request their chain to sync
-            sendMsg(peer->sock, MSG_REQUEST_CHAIN, "");
+            sendMsg(peer->ssl, MSG_REQUEST_CHAIN, "");
             break;
         }
 
@@ -561,7 +612,7 @@ private:
                 cout << "  ⚠️  Block #" << incoming.index
                      << " REJECTED — invalid signature from "
                      << peer->address() << endl;
-                sendMsg(peer->sock, MSG_REJECT_BLOCK,
+                sendMsg(peer->ssl, MSG_REJECT_BLOCK,
                         "INVALID_SIGNATURE:" + to_string(incoming.index));
                 break;
             }
@@ -570,7 +621,7 @@ private:
                 cout << "  ⚠️  Block #" << incoming.index
                      << " REJECTED — chain validation failed" << endl;
                 // Request full chain sync — we may be out of date
-                sendMsg(peer->sock, MSG_REQUEST_CHAIN, "");
+                sendMsg(peer->ssl, MSG_REQUEST_CHAIN, "");
                 break;
             }
 
@@ -593,7 +644,7 @@ private:
             string chainData = serializeChain(
                 blockchain->getChain()
             );
-            sendMsg(peer->sock, MSG_SEND_CHAIN, chainData);
+            sendMsg(peer->ssl, MSG_SEND_CHAIN, chainData);
             cout << "  📤 Sent chain (" << blockchain->getChainSize()
                  << " blocks) to " << peer->address() << endl;
             break;
@@ -621,7 +672,7 @@ private:
         case MSG_REQUEST_PEERS: {
             // Send list of our known peers
             string peerList = buildPeerList();
-            sendMsg(peer->sock, MSG_SEND_PEERS, peerList);
+            sendMsg(peer->ssl, MSG_SEND_PEERS, peerList);
             break;
         }
 
@@ -683,7 +734,7 @@ private:
         for (PeerInfo& p : peers) {
             // Skip the source peer and disconnected ones
             if (&p == source || !p.connected) continue;
-            if (sendMsg(p.sock, MSG_NEW_BLOCK, payload))
+            if (sendMsg(p.ssl, MSG_NEW_BLOCK, payload))
                 forwarded++;
         }
         if (forwarded > 0)
@@ -729,11 +780,21 @@ private:
             return false;
         }
 
+        SSL* ssl = SSL_new(sslCtx);
+        SSL_set_fd(ssl, sock);
+        if (SSL_connect(ssl) <= 0) {
+            SSL_free(ssl);
+            sockClose(sock);
+            cout << "  🔴 SSL Handshake failed with " << peer.address() << endl;
+            return false;
+        }
+
         peer.sock      = sock;
+        peer.ssl       = ssl;
         peer.connected = true;
         peer.lastSeen  = time(nullptr);
 
-        cout << "  🟢 Connected to " << peer.address() << endl;
+        cout << "  🟢 Securely connected to " << peer.address() << endl;
 
         // Handle messages from this peer in background
         startThread(peerHandler,
@@ -869,7 +930,7 @@ private:
                     continue;
                 }
                 // Send heartbeat
-                if (!sendMsg(p.sock, MSG_HEARTBEAT, "")) {
+                if (!sendMsg(p.ssl, MSG_HEARTBEAT, "")) {
                     p.connected = false;
                     cout << "  💔 Lost connection to " << p.address() << endl;
                 }

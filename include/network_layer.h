@@ -176,3 +176,45 @@ struct LockGuard {
     LockGuard(mutex_t& mx) : m(mx) { mutexLock(m); }
     ~LockGuard()                    { mutexUnlock(m); }
 };
+
+// ── OPENSSL TLS ABSTRACTION ──────────────────────────────────
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/rsa.h>
+#include <openssl/x509.h>
+#include <openssl/pem.h>
+
+inline void sslInit() {
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+}
+
+inline void sslCleanup() {
+    EVP_cleanup();
+}
+
+// Wrapper for SSL_write to match sendAll loop
+inline bool sslSendAll(SSL* ssl, const char* data, int len) {
+    if (!ssl) return false;
+    int total = 0;
+    while (total < len) {
+        int r = SSL_write(ssl, data + total, len - total);
+        if (r <= 0) return false;
+        total += r;
+    }
+    return true;
+}
+
+// Wrapper for SSL_read to match recvAll loop
+inline bool sslRecvAll(SSL* ssl, char* buffer, int len) {
+    if (!ssl) return false;
+    int total = 0;
+    while (total < len) {
+        int r = SSL_read(ssl, buffer + total, len - total);
+        if (r <= 0) return false;
+        total += r;
+    }
+    return true;
+}
+
