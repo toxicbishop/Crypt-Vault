@@ -24,6 +24,7 @@
 #include <chrono>
 
 #ifdef _WIN32
+#include <winsock2.h>
 #include <windows.h>
 #include <wincrypt.h>
 #endif
@@ -34,7 +35,7 @@ using namespace std;
 //  SHA-256 UTILITIES
 // ─────────────────────────────────────────────────────────────
 
-namespace SHA256 {
+namespace AuditSHA256 {
     string hash(const string& input);
 }
 

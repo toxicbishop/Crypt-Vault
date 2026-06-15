@@ -20,7 +20,7 @@
 using namespace std;
 
 #include "../include/blockchain_audit.h"
-inline string sha256(const string& input) { return SHA256::hash(input); }
+inline string sha256(const string& input) { return AuditSHA256::hash(input); }
 
 // ── MACHINE FINGERPRINT ──────────────────────────────────────
 

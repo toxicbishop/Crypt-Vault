@@ -16877,7 +16877,7 @@ inline bool load_system_certs(ctx_t ctx) {
   bool loaded_any = false;
   static const wchar_t *store_names[] = {L"ROOT", L"CA"};
   for (auto store_name : store_names) {
-    auto hStore = CertOpenSystemStoreW(NULL, store_name);
+    auto hStore = CertOpenSystemStoreW(0, store_name);
     if (!hStore) continue;
 
     PCCERT_CONTEXT pContext = nullptr;
