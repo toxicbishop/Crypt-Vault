@@ -187,6 +187,7 @@ struct PeerInfo {
     int         port;
     string      nodeID;
     string      publicKey;
+    string      expectedPublicKey;
     string      displayName;
     bool        connected;
     time_t      lastSeen;
@@ -195,6 +196,8 @@ struct PeerInfo {
         return ip + ":" + to_string(port);
     }
 };
+
+#include "../include/cli_utils.h"
 
 // ── P2P NODE CLASS ───────────────────────────────────────────
 
@@ -208,7 +211,21 @@ public:
     {
         sockInit();
         mutexInit(peersMutex);
-        identity = initIdentity();
+        
+        string password = "";
+        const char* envPass = getenv("CRYPTVAULT_NODE_PASS");
+        if (envPass) {
+            password = envPass;
+        } else {
+            password = CLIUtils::getPassword("Enter node passphrase: ");
+            if (password.empty()) {
+                cerr << "  [ID] ERROR: Passphrase is required to start node!" << endl;
+                exit(1);
+            }
+        }
+        
+        identity = initIdentity(password);
+        CLIUtils::secureClear(password);
     }
 
     ~P2PNode() {
@@ -471,6 +488,13 @@ private:
                 peer->port        = stoi(parts[3]);
             }
 
+            if (!peer->expectedPublicKey.empty() && peer->publicKey != peer->expectedPublicKey) {
+                cout << "  ❌ Security Alert: Public key mismatch for " << peer->address() << endl;
+                peer->connected = false;
+                sockClose(peer->sock);
+                break;
+            }
+
             cout << "  🤝 Handshake from: "
                  << (peer->displayName.empty() ? peer->ip : peer->displayName)
                  << " [" << (peer->nodeID.size() > 8 ?
@@ -502,6 +526,14 @@ private:
                 peer->displayName = parts[2];
                 peer->port        = stoi(parts[3]);
             }
+
+            if (!peer->expectedPublicKey.empty() && peer->publicKey != peer->expectedPublicKey) {
+                cout << "  ❌ Security Alert: Public key mismatch for " << peer->address() << endl;
+                peer->connected = false;
+                sockClose(peer->sock);
+                break;
+            }
+
             cout << "  ✅ Connected: "
                  << (peer->displayName.empty() ? peer->ip : peer->displayName)
                  << endl;
@@ -732,6 +764,18 @@ private:
                 line.pop_back();
             if (line.empty()) continue;
 
+            // Parse ip:port and optional expected_public_key
+            size_t space = line.find(' ');
+            string expectedKey = "";
+            if (space != string::npos) {
+                expectedKey = line.substr(space + 1);
+                size_t firstNonSpace = expectedKey.find_first_not_of(" \t");
+                if (firstNonSpace != string::npos) {
+                    expectedKey = expectedKey.substr(firstNonSpace);
+                }
+                line = line.substr(0, space);
+            }
+
             // Parse ip:port
             size_t colon = line.rfind(':');
             if (colon == string::npos) continue;
@@ -747,10 +791,11 @@ private:
             }
 
             PeerInfo p{};
-            p.ip        = ip;
-            p.port      = port;
-            p.connected = false;
-            p.sock      = INVALID_SOCK;
+            p.ip                = ip;
+            p.port              = port;
+            p.expectedPublicKey = expectedKey;
+            p.connected         = false;
+            p.sock              = INVALID_SOCK;
             peers.push_back(p);
             loaded++;
         }
