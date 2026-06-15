@@ -26,12 +26,13 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-zlib
             mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-secp256k1
 
       - name: Compile Crypt Vault (C++17)
         shell: msys2 {0}
         run: |
-          mkdir -p build
-          g++ -o build/Crypt-Vault.exe src/Crypt-Vault.cpp src/blockchain_audit.cpp src/p2p_node.cpp src/eth_logger.cpp -std=c++17 -Wall -Wextra -O2 -I include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00 -static -lssl -lcrypto -lws2_32 -lz -ladvapi32 -lcrypt32 -lgdi32 -lbcrypt
+          mkdir -p build || true
+          g++ -o build/Crypt-Vault.exe src/Crypt-Vault.cpp src/blockchain_audit.cpp src/p2p_node.cpp src/eth_logger.cpp src/vendor/keccak/keccak.cpp src/vendor/keccak/SHA3.cpp -std=c++17 -Wall -Wextra -O2 -I include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00 -static -lssl -lcrypto -lws2_32 -lz -ladvapi32 -lcrypt32 -lgdi32 -lbcrypt -lsecp256k1
 
       - name: Run E2E Encryption/Decryption Test
         shell: powershell
