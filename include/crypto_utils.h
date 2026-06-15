@@ -5,6 +5,7 @@
 #include <fstream>
 #include <cstring>
 #ifdef _WIN32
+#include <winsock2.h>
 #include <windows.h>
 #else
 #include <sys/file.h>
@@ -96,12 +97,12 @@ namespace SHA256Impl {
         }
     };
 
-    static vector<unsigned char> hash(const unsigned char* data, size_t len) {
+    static inline vector<unsigned char> hash(const unsigned char* data, size_t len) {
         Hasher h;
         h.update(data, len);
         return h.final();
     }
-    static vector<unsigned char> hash(const string& s) {
+    static inline vector<unsigned char> hash(const string& s) {
         return hash((const unsigned char*)s.data(), s.size());
     }
     static string toHex(const vector<unsigned char>& h) {
@@ -454,7 +455,8 @@ public:
                 while (inHash.read(hBuf.data(), hBuf.size()) || inHash.gcount() > 0) {
                     hasher.update((const unsigned char*)hBuf.data(), inHash.gcount());
                 }
-                hash = hasher.final();
+                auto tempHash = hasher.final();
+                std::copy_n(tempHash.begin(), std::min((size_t)32, tempHash.size()), hash.begin());
             }
         }
 
@@ -547,7 +549,8 @@ public:
 #ifdef _WIN32
         hLock = CreateFileA(lockPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, NULL);
         if (hLock != INVALID_HANDLE_VALUE) {
-            OVERLAPPED overlapped = {0};
+            OVERLAPPED overlapped;
+            memset(&overlapped, 0, sizeof(OVERLAPPED));
             LockFileEx(hLock, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &overlapped);
         }
 #else
@@ -558,7 +561,8 @@ public:
     ~FileLocker() {
 #ifdef _WIN32
         if (hLock != INVALID_HANDLE_VALUE) {
-            OVERLAPPED overlapped = {0};
+            OVERLAPPED overlapped;
+            memset(&overlapped, 0, sizeof(OVERLAPPED));
             UnlockFileEx(hLock, 0, MAXDWORD, MAXDWORD, &overlapped);
             CloseHandle(hLock);
         }
@@ -773,7 +777,9 @@ public:
 
         if (ethLogger) {
             try {
-                auto txHash = ethLogger->logOperation(ptHash, EthLogger::OpType::ENCRYPT, std::filesystem::path(inputFile).filename().string());
+                std::array<uint8_t, 32> ptHashArr = {0};
+                std::copy_n(ptHash.begin(), std::min((size_t)32, ptHash.size()), ptHashArr.begin());
+                auto txHash = ethLogger->logOperation(ptHashArr, EthLogger::OpType::ENCRYPT, std::filesystem::path(inputFile).filename().string());
                 cout << "\n[Ethereum] Logged - tx: " << txHash.substr(0, 18) << "..." << endl;
             } catch (const exception& e) {
                 cerr << "\n[Ethereum] Audit log failed: " << e.what() << endl;
@@ -908,8 +914,8 @@ public:
         in.close();
         progress.finish();
 
+        auto computedPtHash = ptHasher.final();
         if (isV2) {
-            auto computedPtHash = ptHasher.final();
             if (memcmp(computedPtHash.data(), expectedPtHash, 32) != 0) {
                 remove(tempOutFile.c_str());
                 cerr << "\n❌ Integrity check failed: decrypted content does not match original." << endl;
@@ -925,7 +931,9 @@ public:
 
         if (ethLogger) {
             try {
-                auto txHash = ethLogger->logOperation(computedPtHash, EthLogger::OpType::DECRYPT, std::filesystem::path(inputFile).filename().string());
+                std::array<uint8_t, 32> computedPtHashArr = {0};
+                std::copy_n(computedPtHash.begin(), std::min((size_t)32, computedPtHash.size()), computedPtHashArr.begin());
+                auto txHash = ethLogger->logOperation(computedPtHashArr, EthLogger::OpType::DECRYPT, std::filesystem::path(inputFile).filename().string());
                 cout << "\n[Ethereum] Logged - tx: " << txHash.substr(0, 18) << "..." << endl;
             } catch (const exception& e) {
                 cerr << "\n[Ethereum] Audit log failed: " << e.what() << endl;

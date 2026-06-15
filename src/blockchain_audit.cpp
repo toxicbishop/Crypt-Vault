@@ -162,7 +162,7 @@ Block CryptVaultBlockchain::createGenesisBlock() {
 void CryptVaultBlockchain::initRSA() {
 #ifdef _WIN32
     if (!CryptAcquireContextA(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV_A, PROV_RSA_FULL, 0)) {
-        if (GetLastError() == NTE_BAD_KEYSET) {
+        if (GetLastError() == (DWORD)NTE_BAD_KEYSET) {
             CryptAcquireContextA(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV_A, PROV_RSA_FULL, CRYPT_NEWKEYSET);
         }
     }

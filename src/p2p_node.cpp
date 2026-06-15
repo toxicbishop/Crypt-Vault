@@ -656,7 +656,7 @@ private:
         // Rule: replace ours only if theirs is:
         //   1. Longer
         //   2. Fully valid
-        if (theirChain.size() <= blockchain->getChainSize()) {
+        if (theirChain.size() <= (size_t)blockchain->getChainSize()) {
             return false;   // ours is same or longer — keep it
         }
 
