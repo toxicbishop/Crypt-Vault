@@ -28,6 +28,13 @@ crypt-vault.exe
 
 *.enc
 *.exe
+.env
+.env.*
+*.pem
+*.crt
+*.p12
+*.pfx
+secrets.json
 decrypted.txt
 test.txt
 identity.key
