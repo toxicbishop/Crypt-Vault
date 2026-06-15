@@ -17,7 +17,7 @@ using namespace std;
 //  SHA-256 IMPLEMENTATION
 // ─────────────────────────────────────────────────────────────
 
-namespace SHA256 {
+namespace AuditSHA256 {
     typedef unsigned int uint32;
     typedef unsigned long long uint64;
 
@@ -117,7 +117,7 @@ string CryptVaultBlockchain::getTimestamp() {
 }
 
 string CryptVaultBlockchain::getDeviceID() {
-    return SHA256::hash("CryptVaultDevice_001").substr(0, 16);
+    return AuditSHA256::hash("CryptVaultDevice_001").substr(0, 16);
 }
 
 string CryptVaultBlockchain::mineBlock(Block& block) {
@@ -126,7 +126,7 @@ string CryptVaultBlockchain::mineBlock(Block& block) {
     string hash;
     do {
         block.nonce++;
-        hash = SHA256::hash(block.toString());
+        hash = AuditSHA256::hash(block.toString());
     } while (hash.substr(0, difficulty) != target);
     return hash;
 }
@@ -139,7 +139,7 @@ Block CryptVaultBlockchain::createGenesisBlock() {
     genesis.record = {
         AuditOperation::SYSTEM_START,
         "GENESIS",
-        SHA256::hash("CryptVault_Genesis_Block"),
+        AuditSHA256::hash("CryptVault_Genesis_Block"),
         getDeviceID(),
         getTimestamp(),
         true, 0, 0.0,
@@ -300,7 +300,7 @@ bool CryptVaultBlockchain::validateChain() {
     if (!chain.empty()) {
         const Block& genesis = chain[0];
         if (genesis.index != 0) return false;
-        string recomputed = SHA256::hash(genesis.toString());
+        string recomputed = AuditSHA256::hash(genesis.toString());
         if (recomputed != genesis.blockHash) {
             cout << "  ❌ TAMPER DETECTED at GENESIS Block #0" << endl;
             return false;
@@ -315,7 +315,7 @@ bool CryptVaultBlockchain::validateChain() {
         Block& current  = chain[i];
         Block& previous = chain[i-1];
 
-        string recomputed = SHA256::hash(current.toString());
+        string recomputed = AuditSHA256::hash(current.toString());
         if (recomputed != current.blockHash) {
             cout << "  ❌ TAMPER DETECTED at Block #" << i << endl;
             return false;
@@ -544,7 +544,7 @@ bool CryptVaultBlockchain::validateNewBlock(const Block& b) {
     if (b.index != (int)chain.size()) return false;
     if (b.previousHash != last.blockHash) return false;
     string target(difficulty, '0');
-    return SHA256::hash(b.toString()).substr(0, difficulty) == target;
+    return AuditSHA256::hash(b.toString()).substr(0, difficulty) == target;
 }
 
 bool CryptVaultBlockchain::validateChainExternal(const vector<Block>& c) {
@@ -553,14 +553,14 @@ bool CryptVaultBlockchain::validateChainExternal(const vector<Block>& c) {
 
     // Check genesis block of external chain
     if (c[0].index != 0) return false;
-    string genHash = SHA256::hash(c[0].toString());
+    string genHash = AuditSHA256::hash(c[0].toString());
     if (genHash != c[0].blockHash || genHash.substr(0, difficulty) != target) return false;
 
     // Validate rest of chain
     for (size_t i = 1; i < c.size(); i++) {
         if (c[i].previousHash != c[i-1].blockHash) return false;
         
-        string recomputed = SHA256::hash(c[i].toString());
+        string recomputed = AuditSHA256::hash(c[i].toString());
         if (recomputed != c[i].blockHash) return false;
 
         if (c[i].blockHash.substr(0, difficulty) != target) return false;
@@ -629,7 +629,7 @@ void logKeyExchange(CryptVaultBlockchain& bc,
     AuditRecord r;
     r.operation    = AuditOperation::KEY_EXCHANGE;
     r.filename     = "RSA_KEY_EXCHANGE";
-    r.fileHash     = SHA256::hash(targetDevice);
+    r.fileHash     = AuditSHA256::hash(targetDevice);
     r.algorithm    = "RSA-2048";
     r.hmacVerified = true;
     bc.addRecord(r);

@@ -131,7 +131,7 @@ inline bool recvAll(socket_t s, char* buf, int len) {
     thread_t startThread(Fn fn, Arg* arg) {
         return CreateThread(
             NULL, 0,
-            (LPTHREAD_START_ROUTINE)fn,
+            (LPTHREAD_START_ROUTINE)(size_t)fn,
             (LPVOID)arg, 0, NULL
         );
     }
