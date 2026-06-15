@@ -27,7 +27,9 @@ using namespace std;
     #endif
     #include <winsock2.h>
     #include <ws2tcpip.h>
+#ifdef _MSC_VER
     #pragma comment(lib, "ws2_32.lib")
+#endif
 
     typedef SOCKET socket_t;
     #define INVALID_SOCK  INVALID_SOCKET
