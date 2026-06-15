@@ -90,14 +90,14 @@ A hybrid **C++ + x64 Assembly** encryption tool with a **blockchain-backed tampe
 
 ```bash
 g++ -std=c++17 -O2 -o crypt-vault.exe \
-    Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lws2_32
+    src/Crypt-Vault.cpp src/blockchain_audit.cpp src/p2p_node.cpp src/eth_logger.cpp -lws2_32 -lssl -lcrypto
 ```
 
 ### Linux
 
 ```bash
 g++ -std=c++17 -O2 -o crypt-vault \
-    Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lpthread
+    src/Crypt-Vault.cpp src/blockchain_audit.cpp src/p2p_node.cpp src/eth_logger.cpp -lpthread -lssl -lcrypto
 ```
 
 ### Platform Support
@@ -110,9 +110,9 @@ g++ -std=c++17 -O2 -o crypt-vault \
 
 ### Dependencies
 
-- **Windows**: `ws2_32.lib` — ships with every Windows installation
-- **Linux**: `pthread` — ships with every Linux distro
-- No external libraries required
+- **Windows**: `ws2_32.lib` (ships with Windows) and **OpenSSL** (install via MSYS2 or vcpkg)
+- **Linux**: `pthread` (ships with Linux) and **OpenSSL** (`sudo apt install libssl-dev`)
+- Note: OpenSSL is required for secure P2P TLS and communicating with the Ethereum RPC.
 
 ---
 
@@ -177,6 +177,20 @@ Block #N
 ```
 
 Changing any field in any block breaks all hashes after it — **tamper detected instantly**.
+
+---
+
+## Ethereum Audit Logger
+
+CryptVault can permanently anchor its local blockchain hash to the Ethereum Mainnet (or Sepolia Testnet) via a smart contract. This provides mathematically irrefutable proof of the audit log's existence at a specific time.
+
+To enable the Ethereum logger, set the following environment variables:
+
+- `CRYPTVAULT_ETH_RPC`: Your Infura or Alchemy RPC URL (e.g., `https://sepolia.infura.io/v3/YOUR-PROJECT-ID`)
+- `CRYPTVAULT_ETH_KEY`: The 64-character hex private key of your Ethereum wallet (no `0x` prefix)
+- `CRYPTVAULT_ETH_CONTRACT`: The 40-character hex contract address (no `0x` prefix)
+
+If these variables are present, CryptVault will automatically send a transaction anchoring the latest block hash to the blockchain every 10 blocks. To disable Ethereum logging, simply remove these variables.
 
 ---
 
