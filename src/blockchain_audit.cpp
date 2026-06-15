@@ -1,6 +1,17 @@
 #include "../include/blockchain_audit.h"
 #include "../include/p2p_node.h"
+#include "eth_logger.hpp"
 #include <algorithm>
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <vector>
+#include <chrono>
+#include <ctime>
+
+extern std::unique_ptr<EthLogger> ethLogger;
+
+using namespace std;
 
 // ─────────────────────────────────────────────────────────────
 //  SHA-256 IMPLEMENTATION
@@ -271,6 +282,16 @@ Block CryptVaultBlockchain::addRecord(const AuditRecord& record) {
 
     p2p_broadcastBlock(newBlock);
 
+    if (ethLogger && chain.size() % 10 == 0) {
+        try {
+            auto tipHash = chain.back().blockHash;
+            ethLogger->anchorChain(chain.size(), tipHash);
+            cout << "  🔗 Chain anchored to Ethereum at block " << chain.size() << endl;
+        } catch (const std::exception& e) {
+            std::cerr << "[Ethereum] Anchor failed: " << e.what() << "\n";
+        }
+    }
+
     return newBlock;
 }
 
@@ -460,6 +481,21 @@ void CryptVaultBlockchain::printStats() {
     cout << "  " << string(40, '=') << endl;
 }
 
+static std::string htmlEscape(const std::string& s) {
+    std::string out; out.reserve(s.size());
+    for (char c : s) {
+        switch(c) {
+            case '&':  out += "&amp;";  break;
+            case '<':  out += "&lt;";   break;
+            case '>':  out += "&gt;";   break;
+            case '"': out += "&quot;"; break;
+            case '\'': out += "&#39;";  break;
+            default:   out += c;
+        }
+    }
+    return out;
+}
+
 void CryptVaultBlockchain::exportHTMLReport(const string& outFile) {
     ofstream html(outFile);
     html << "<!DOCTYPE html><html><head>"
@@ -483,10 +519,10 @@ void CryptVaultBlockchain::exportHTMLReport(const string& outFile) {
     for (const Block& b : chain) {
         html << "<tr>"
              << "<td>" << b.index << "</td>"
-             << "<td>" << operationToString(b.record.operation) << "</td>"
-             << "<td>" << b.record.filename << "</td>"
-             << "<td>" << b.record.timestamp << "</td>"
-             << "<td>" << b.record.algorithm << "</td>"
+             << "<td>" << htmlEscape(operationToString(b.record.operation)) << "</td>"
+             << "<td>" << htmlEscape(b.record.filename) << "</td>"
+             << "<td>" << htmlEscape(b.record.timestamp) << "</td>"
+             << "<td>" << htmlEscape(b.record.algorithm) << "</td>"
              << "<td>" << b.record.fileSizeBytes << "B</td>"
              << "<td class='" << (b.record.hmacVerified ? "valid'>✅" : "invalid'>❌")
              << "</td>"
