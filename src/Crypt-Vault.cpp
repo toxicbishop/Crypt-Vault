@@ -28,11 +28,13 @@
 // #include <zlib.h>
 
 #ifdef _WIN32
+#include <winsock2.h>
 #include <windows.h>
 #include <wincrypt.h>
-#include <winsock2.h>
 #include <ws2tcpip.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 #include <conio.h>  // For _getch() secure password input
 #include <io.h>     // For _isatty() check
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
@@ -173,9 +175,6 @@ namespace SHA256Impl {
         Hasher h;
         h.update(data, len);
         return h.final();
-    }
-    static vector<unsigned char> hash(const string& s) {
-        return hash((const unsigned char*)s.data(), s.size());
     }
     static string toHex(const vector<unsigned char>& h) {
         stringstream ss;
@@ -891,8 +890,8 @@ public:
 
 class SimpleCompressor {
 public:
-    static bool compressFile(const string& in, const string& out) { return false; }
-    static bool decompressFile(const string& in, const string& out) { return false; }
+    static bool compressFile(const string&, const string&) { return false; }
+    static bool decompressFile(const string&, const string&) { return false; }
     static vector<unsigned char> compress(const vector<unsigned char>& data) { return data; }
     static vector<unsigned char> decompress(const vector<unsigned char>& data) { return data; }
 };
@@ -956,7 +955,10 @@ public:
     static double entropy(const string& p) {
         int cs = 0; bool u=0,l=0,d=0,s=0;
         for (char c : p) { if (isupper(c)) u=1; else if (islower(c)) l=1; else if (isdigit(c)) d=1; else s=1; }
-        if (u) cs+=26; if (l) cs+=26; if (d) cs+=10; if (s) cs+=32;
+        if (u) cs+=26;
+        if (l) cs+=26;
+        if (d) cs+=10;
+        if (s) cs+=32;
         return cs > 0 ? p.length() * log2(cs) : 0;
     }
 };
@@ -1753,7 +1755,8 @@ private:
         cout << GRAY << "  Length (default " << len << "): " << RESET;
         string lenStr; getLineTrim(lenStr);
         if (!lenStr.empty()) { try { len = stoi(lenStr); } catch (...) {} }
-        if (len < 4) len = 4; if (len > 128) len = 128;
+        if (len < 4) len = 4;
+        if (len > 128) len = 128;
         string pw = PasswordGenerator::generate(len);
         double ent = PasswordGenerator::entropy(pw);
         cout << GREEN << "\n  Generated: " << RESET << pw << endl;
@@ -1950,7 +1953,7 @@ public:
                     cout << GREEN << "\n  ✓ Encrypted: " << RESET << encryptedText << endl;
                     
                     // Log to blockchain
-                    string textHash = SHA256::hash(text);
+                    string textHash = AuditSHA256::hash(text);
                     logEncryption(blockchain, "TEXT_DATA", textHash, text.length(), encDuration * 1000, true);
                     
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
@@ -1969,7 +1972,7 @@ public:
                     } else {
                         cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
                         // Log to blockchain
-                        string textHash = SHA256::hash(result);
+                        string textHash = AuditSHA256::hash(result);
                         logDecryption(blockchain, "TEXT_DATA", textHash, result.length(), decDuration * 1000, true);
                     }
                     
