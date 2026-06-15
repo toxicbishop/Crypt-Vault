@@ -1,7 +1,7 @@
 # CryptVault — Secure File Sharing System with Encryption
 
 [![Build Status](https://github.com/toxicbishop/Crypt-Vault/actions/workflows/build.yml/badge.svg)](https://github.com/toxicbishop/Crypt-Vault/actions/workflows/build.yml)
-![C++](https://img.shields.io/badge/C%2B%2B-00599C?style=flat-square&logo=c%2B%2B&logoColor=white)
+![C++](https://img.shields.io/badge/C%2B%2B-00599C?logo=c%2B%2B&logoColor=white)
 ![License: GPL 3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)
 
