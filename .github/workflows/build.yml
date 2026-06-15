@@ -26,13 +26,22 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-zlib
             mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-secp256k1
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      - name: Build secp256k1
+        shell: msys2 {0}
+        run: |
+          cd src/vendor/secp256k1
+          cmake -B build -G Ninja -DSECP256K1_ENABLE_MODULE_RECOVERY=ON
+          cmake --build build
 
       - name: Compile Crypt Vault (C++17)
         shell: msys2 {0}
         run: |
           mkdir -p build || true
-          g++ -o build/Crypt-Vault.exe src/Crypt-Vault.cpp src/blockchain_audit.cpp src/p2p_node.cpp src/eth_logger.cpp src/vendor/keccak/keccak.cpp src/vendor/keccak/SHA3.cpp -std=c++17 -Wall -Wextra -O2 -I include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00 -static -lssl -lcrypto -lws2_32 -lz -ladvapi32 -lcrypt32 -lgdi32 -lbcrypt -lsecp256k1
+          SECP256K1_LIB=$(find src/vendor/secp256k1/build -name "libsecp256k1.a" | head -n 1)
+          g++ -o build/Crypt-Vault.exe src/Crypt-Vault.cpp src/blockchain_audit.cpp src/p2p_node.cpp src/eth_logger.cpp src/vendor/keccak/keccak.cpp src/vendor/keccak/SHA3.cpp -std=c++17 -Wall -Wextra -O2 -I include -I src/vendor/secp256k1/include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00 -static -lssl -lcrypto -lws2_32 -lz -ladvapi32 -lcrypt32 -lgdi32 -lbcrypt $SECP256K1_LIB
 
       - name: Run E2E Encryption/Decryption Test
         shell: powershell
