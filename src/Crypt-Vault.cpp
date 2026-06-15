@@ -176,9 +176,6 @@ namespace SHA256Impl {
         h.update(data, len);
         return h.final();
     }
-    static vector<unsigned char> hash(const string& s) {
-        return hash((const unsigned char*)s.data(), s.size());
-    }
     static string toHex(const vector<unsigned char>& h) {
         stringstream ss;
         for (auto b : h) ss << hex << setfill('0') << setw(2) << (int)b;
@@ -1956,7 +1953,7 @@ public:
                     cout << GREEN << "\n  ✓ Encrypted: " << RESET << encryptedText << endl;
                     
                     // Log to blockchain
-                    string textHash = SHA256::hash(text);
+                    string textHash = AuditSHA256::hash(text);
                     logEncryption(blockchain, "TEXT_DATA", textHash, text.length(), encDuration * 1000, true);
                     
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
@@ -1975,7 +1972,7 @@ public:
                     } else {
                         cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
                         // Log to blockchain
-                        string textHash = SHA256::hash(result);
+                        string textHash = AuditSHA256::hash(result);
                         logDecryption(blockchain, "TEXT_DATA", textHash, result.length(), decDuration * 1000, true);
                     }
                     
