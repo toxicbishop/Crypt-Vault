@@ -13253,7 +13253,7 @@ inline bool ClientImpl::handle_request(Stream &strm, Request &req,
 
   if (!is_ssl() && is_proxy_enabled_for_host(host_)) {
     auto req2 = req;
-    req2.path = "http://" +
+    req2.path = "https://" +
                 detail::make_host_and_port_string(host_, port_, false) +
                 req.path;
     ret = process_request(strm, req2, res, close_connection, error);
