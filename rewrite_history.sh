@@ -17,4 +17,4 @@ case "$GIT_AUTHOR_NAME" in
         export GIT_AUTHOR_EMAIL="$CORRECT_EMAIL"
         ;;
 esac
-' --tag-name-filter cat -- --branches --tags
+' --msg-filter 'sed -E -e "/Co-authored-by:.*github-advanced-security/d" -e "/Co-authored-by:.*dependabot/d"' --tag-name-filter cat -- --branches --tags
