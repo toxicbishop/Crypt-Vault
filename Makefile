@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -O2 -I include
-LDFLAGS = -lws2_32 -lz
+CXXFLAGS = -std=c++17 -O2 -I include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00
+LDFLAGS = -lws2_32 -lz -lssl -lcrypto
 
 SRC_DIR = src
 INC_DIR = include
