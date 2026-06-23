@@ -20,12 +20,12 @@
 using namespace std;
 
 #include "../include/blockchain_audit.h"
-inline string sha256(const string& input) { return SHA256::hash(input); }
+inline string sha256(const string& input) { return AuditSHA256::hash(input); }
 
 // ── MACHINE FINGERPRINT ──────────────────────────────────────
 
 // Cross-platform hostname / machine identifier
-string getMachineFingerprint() {
+inline string getMachineFingerprint() {
     string fp = "";
 
 #ifdef _WIN32
@@ -61,7 +61,6 @@ struct NodeIdentity {
     string displayName;   // Human-readable name from peers.txt
 
     // Sign a piece of data — simplified HMAC-style signing
-    // In Month 4 upgrade: replace with real RSA/ECDSA via OpenSSL
     string sign(const string& data) const {
         return sha256(data + privateKey);
     }
@@ -72,12 +71,9 @@ struct NodeIdentity {
     }
 
     // Verify a signature using only public key
-    // (simplified — real version uses asymmetric crypto)
     static bool verifyWithPublicKey(const string& data,
                                     const string& signature,
                                     const string& pubKey) {
-        // In real implementation: RSA verify
-        // Here: anyone with pubKey can verify (symmetric simplification)
         return sha256(data + sha256(pubKey + "PRIVATE")) == signature;
     }
 
@@ -90,27 +86,77 @@ struct NodeIdentity {
 
 const string IDENTITY_FILE = "identity.key";
 
+#include <sys/stat.h>
+#include <fcntl.h>
+#include "crypto_utils.h"
+
 // Save identity to disk
-void saveIdentity(const NodeIdentity& id) {
-    ofstream f(IDENTITY_FILE);
+inline void saveIdentity(const NodeIdentity& id, const string& password) {
+    string serialized = "NODE_ID:" + id.nodeID + "\n" +
+                        "PUBLIC_KEY:" + id.publicKey + "\n" +
+                        "PRIVATE_KEY:" + id.privateKey + "\n" +
+                        "DISPLAY_NAME:" + id.displayName + "\n";
+    vector<unsigned char> plaintext(serialized.begin(), serialized.end());
+    
+    AESCipher cipher;
+    cipher.setKey(password);
+    vector<unsigned char> encrypted = cipher.encrypt(plaintext);
+
+    ofstream f(IDENTITY_FILE, ios::binary);
     if (!f.is_open()) {
         cerr << "  [ID] WARNING: Cannot save identity to disk" << endl;
         return;
     }
-    f << "NODE_ID:"      << id.nodeID     << "\n";
-    f << "PUBLIC_KEY:"   << id.publicKey  << "\n";
-    f << "PRIVATE_KEY:"  << id.privateKey << "\n";
-    f << "DISPLAY_NAME:" << id.displayName<< "\n";
+    f.write("CVPI", 4);
+    char version = 0x01;
+    f.write(&version, 1);
+    f.write(reinterpret_cast<const char*>(encrypted.data()), encrypted.size());
     f.close();
+
+    if (chmod(IDENTITY_FILE.c_str(), 0600) != 0) {
+        cerr << "  [ID] WARNING: Could not set strict permissions on identity.key" << endl;
+    }
 }
 
 // Load identity from disk
-bool loadIdentity(NodeIdentity& id) {
-    ifstream f(IDENTITY_FILE);
+inline bool loadIdentity(NodeIdentity& id, const string& password) {
+    ifstream f(IDENTITY_FILE, ios::binary | ios::ate);
     if (!f.is_open()) return false;
 
+    streamsize size = f.tellg();
+    if (size <= 5) return false;
+    
+    f.seekg(0, ios::beg);
+    char magic[4];
+    f.read(magic, 4);
+    if (strncmp(magic, "CVPI", 4) != 0) {
+        cerr << "  [ID] ERROR: identity.key missing magic bytes! Please delete it and restart." << endl;
+        return false;
+    }
+    char version;
+    f.read(&version, 1);
+    if (version != 0x01) {
+        cerr << "  [ID] ERROR: Unsupported identity.key version!" << endl;
+        return false;
+    }
+
+    size -= 5;
+    vector<unsigned char> encrypted(size);
+    f.read(reinterpret_cast<char*>(encrypted.data()), size);
+    f.close();
+
+    AESCipher cipher;
+    cipher.setKey(password);
+    vector<unsigned char> plaintext = cipher.decrypt(encrypted);
+    if (plaintext.empty()) {
+        cerr << "  [ID] ERROR: Incorrect password for identity.key!" << endl;
+        return false;
+    }
+    string data(plaintext.begin(), plaintext.end());
+
+    stringstream ss(data);
     string line;
-    while (getline(f, line)) {
+    while (getline(ss, line)) {
         size_t sep = line.find(':');
         if (sep == string::npos) continue;
         string key = line.substr(0, sep);
@@ -124,26 +170,24 @@ bool loadIdentity(NodeIdentity& id) {
 }
 
 // Create or load node identity
-NodeIdentity initIdentity(const string& displayName = "") {
+inline NodeIdentity initIdentity(const string& password, const string& displayName = "") {
     NodeIdentity id;
 
-    // Try loading existing identity first
-    if (loadIdentity(id)) {
+    if (loadIdentity(id, password)) {
         if (!displayName.empty()) id.displayName = displayName;
         cout << "  🔑 Node identity loaded: " << id.shortID() << endl;
         return id;
     }
 
-    // Create new identity from machine fingerprint
     string fp      = getMachineFingerprint();
     string seed    = sha256(fp + "CRYPTVAULT_SEED_2024");
 
     id.nodeID      = sha256(seed + "NODE_ID");
     id.publicKey   = sha256(seed + "PUBLIC");
-    id.privateKey  = sha256(seed + "PRIVATE");  // Never leave this machine
+    id.privateKey  = sha256(seed + "PRIVATE");
     id.displayName = displayName.empty() ? fp : displayName;
 
-    saveIdentity(id);
+    saveIdentity(id, password);
 
     cout << "  🆕 New node identity created: " << id.shortID() << endl;
     return id;
