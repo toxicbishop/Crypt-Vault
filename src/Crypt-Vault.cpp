@@ -25,14 +25,16 @@
 #include <cmath>
 #include <map>
 #include <numeric>
-#include <zlib.h>
+// #include <zlib.h>
 
 #ifdef _WIN32
+#include <winsock2.h>
 #include <windows.h>
 #include <wincrypt.h>
-#include <winsock2.h>
 #include <ws2tcpip.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 #include <conio.h>  // For _getch() secure password input
 #include <io.h>     // For _isatty() check
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
@@ -84,6 +86,10 @@ struct FsCompat {
 
 #include "../include/blockchain_audit.h"
 #include "../include/p2p_node.h"
+#include "eth_logger.hpp"
+#include <cstdlib>
+
+std::unique_ptr<EthLogger> ethLogger;
 using namespace std;
 // ═══════════════════════════════════════════════════════════
 // SHA-256 Implementation
@@ -169,9 +175,6 @@ namespace SHA256Impl {
         Hasher h;
         h.update(data, len);
         return h.final();
-    }
-    static vector<unsigned char> hash(const string& s) {
-        return hash((const unsigned char*)s.data(), s.size());
     }
     static string toHex(const vector<unsigned char>& h) {
         stringstream ss;
@@ -331,7 +334,7 @@ namespace AES256Impl {
 // ═══════════════════════════════════════════════════════════
 // Utility Functions
 // ═══════════════════════════════════════════════════════════
-bool generateRandomBytes(unsigned char* buf, size_t len) {
+inline bool generateRandomBytes(unsigned char* buf, size_t len) {
 #ifdef _WIN32
     HCRYPTPROV hProv;
     if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) return false;
@@ -345,13 +348,13 @@ bool generateRandomBytes(unsigned char* buf, size_t len) {
     return rnd.good();
 #endif
 }
-vector<unsigned char> pkcs7Pad(const vector<unsigned char>& data) {
+inline vector<unsigned char> pkcs7Pad(const vector<unsigned char>& data) {
     size_t padLen = 16 - (data.size() % 16);
     vector<unsigned char> padded = data;
     padded.insert(padded.end(), padLen, (unsigned char)padLen);
     return padded;
 }
-bool pkcs7Unpad(vector<unsigned char>& data) {
+inline bool pkcs7Unpad(vector<unsigned char>& data) {
     if (data.empty() || data.size() % 16 != 0) return false;
     unsigned char pad = data.back();
     if (pad < 1 || pad > 16) return false;
@@ -360,12 +363,12 @@ bool pkcs7Unpad(vector<unsigned char>& data) {
     data.resize(data.size() - pad);
     return true;
 }
-string bytesToHex(const unsigned char* data, size_t len) {
+inline string bytesToHex(const unsigned char* data, size_t len) {
     stringstream ss;
     for (size_t i = 0; i < len; i++) ss << hex << setfill('0') << setw(2) << (int)data[i];
     return ss.str();
 }
-vector<unsigned char> hexToBytes(const string& hex) {
+inline vector<unsigned char> hexToBytes(const string& hex) {
     vector<unsigned char> bytes;
     for (size_t i = 0; i + 1 < hex.size(); i += 2) {
         unsigned char b = (unsigned char)strtol(hex.substr(i, 2).c_str(), nullptr, 16);
@@ -377,7 +380,7 @@ vector<unsigned char> hexToBytes(const string& hex) {
 // Security Primitives (HMAC, PBKDF2, Memory Safety)
 // ═══════════════════════════════════════════════════════════
 // Secure memory wipe - prevents compiler optimization
-void secure_memzero(void* ptr, size_t len) {
+inline void secure_memzero(void* ptr, size_t len) {
     volatile unsigned char* p = (volatile unsigned char*)ptr;
     while (len--) *p++ = 0;
 #if defined(__GNUC__) || defined(__clang__)
@@ -387,7 +390,7 @@ void secure_memzero(void* ptr, size_t len) {
 #endif
 }
 // Constant-time comparison to prevent timing attacks
-bool constant_time_compare(const unsigned char* a, const unsigned char* b, size_t len) {
+inline bool constant_time_compare(const unsigned char* a, const unsigned char* b, size_t len) {
     unsigned char diff = 0;
     for (size_t i = 0; i < len; i++) {
         diff |= a[i] ^ b[i];
@@ -427,14 +430,14 @@ public:
 };
 
 // HMAC-SHA256 high-level utility
-vector<unsigned char> hmac_sha256(const unsigned char* key, size_t keyLen, 
+inline vector<unsigned char> hmac_sha256(const unsigned char* key, size_t keyLen, 
                                    const unsigned char* data, size_t dataLen) {
     HMAC_SHA256 ctx(key, keyLen);
     ctx.update(data, dataLen);
     return ctx.final();
 }
 // PBKDF2-SHA256 key derivation
-void pbkdf2_sha256(const string& password, const unsigned char* salt, size_t saltLen,
+inline void pbkdf2_sha256(const string& password, const unsigned char* salt, size_t saltLen,
                    int iterations, unsigned char* output, size_t dkLen) {
     const size_t HASH_LEN = 32;
     size_t blocks = (dkLen + HASH_LEN - 1) / HASH_LEN;
@@ -887,93 +890,10 @@ public:
 
 class SimpleCompressor {
 public:
-    static bool compressFile(const string& src, const string& dst) {
-        ifstream in(src, ios::binary | ios::ate);
-        if (!in.is_open()) return false;
-        long long szOff = in.tellg();
-        uint32_t sz = (szOff > 0xFFFFFFFF) ? 0xFFFFFFFF : (uint32_t)szOff;
-        in.seekg(0, ios::beg);
-
-        ofstream out(dst, ios::binary);
-        if (!out.is_open()) return false;
-
-        out.write("CVZ\x01", 4);
-        for (int i = 0; i < 4; i++) out.put((sz >> (i * 8)) & 0xFF);
-
-        z_stream zs; memset(&zs, 0, sizeof(zs));
-        if (deflateInit(&zs, Z_DEFAULT_COMPRESSION) != Z_OK) return false;
-        
-        vector<unsigned char> inB(131072), outB(131072);
-        int flush;
-        do {
-            in.read((char*)inB.data(), inB.size());
-            zs.avail_in = (uInt)in.gcount();
-            flush = in.eof() ? Z_FINISH : Z_NO_FLUSH;
-            zs.next_in = inB.data();
-            do {
-                zs.avail_out = (uInt)outB.size();
-                zs.next_out = outB.data();
-                deflate(&zs, flush);
-                out.write((char*)outB.data(), outB.size() - zs.avail_out);
-            } while (zs.avail_out == 0);
-        } while (flush != Z_FINISH);
-        deflateEnd(&zs);
-        return true;
-    }
-
-    static bool decompressFile(const string& src, const string& dst) {
-        ifstream in(src, ios::binary);
-        ofstream out(dst, ios::binary);
-        if (!in || !out) return false;
-        char hdr[4]; in.read(hdr, 4);
-        if (memcmp(hdr, "CVZ\x01", 4) != 0) return false;
-        in.ignore(4); // Skip size 
-
-        z_stream zs; memset(&zs, 0, sizeof(zs));
-        if (inflateInit(&zs) != Z_OK) return false;
-
-        vector<unsigned char> inB(131072), outB(131072);
-        int ret;
-        do {
-            in.read((char*)inB.data(), inB.size());
-            zs.avail_in = (uInt)in.gcount();
-            if (zs.avail_in == 0) break;
-            zs.next_in = inB.data();
-            do {
-                zs.avail_out = (uInt)outB.size();
-                zs.next_out = outB.data();
-                ret = inflate(&zs, Z_NO_FLUSH);
-                out.write((char*)outB.data(), outB.size() - zs.avail_out);
-            } while (zs.avail_out == 0);
-        } while (ret != Z_STREAM_END);
-        inflateEnd(&zs);
-        return ret == Z_STREAM_END;
-    }
-
-    static vector<unsigned char> compress(const vector<unsigned char>& input) {
-        if (input.empty()) return {};
-        uLongf cL = compressBound(input.size());
-        vector<unsigned char> res(8 + cL);
-        memcpy(res.data(), "CVZ\x01", 4);
-        uint32_t sz = (uint32_t)input.size();
-        for (int i=0; i<4; i++) res[4+i] = (sz >> (i*8)) & 0xFF;
-        if (::compress(res.data()+8, &cL, input.data(), input.size()) != Z_OK) return input;
-        res.resize(8 + cL);
-        return res;
-    }
-    static vector<unsigned char> decompress(const vector<unsigned char>& input) {
-        if (input.size() < 8 || memcmp(input.data(), "CVZ\x01", 4) != 0) return {};
-        uint32_t sz = 0;
-        for (int i=0; i<4; i++) sz |= ((uint32_t)input[4+i]) << (i*8);
-        vector<unsigned char> res(sz);
-        uLongf dL = sz;
-        if (uncompress(res.data(), &dL, input.data() + 8, input.size() - 8) != Z_OK) return {};
-        res.resize(dL);
-        return res;
-    }
-    static bool isCompressed(const vector<unsigned char>& d) {
-        return d.size() >= 4 && memcmp(d.data(), "CVZ\x01", 4) == 0;
-    }
+    static bool compressFile(const string&, const string&) { return false; }
+    static bool decompressFile(const string&, const string&) { return false; }
+    static vector<unsigned char> compress(const vector<unsigned char>& data) { return data; }
+    static vector<unsigned char> decompress(const vector<unsigned char>& data) { return data; }
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1035,7 +955,10 @@ public:
     static double entropy(const string& p) {
         int cs = 0; bool u=0,l=0,d=0,s=0;
         for (char c : p) { if (isupper(c)) u=1; else if (islower(c)) l=1; else if (isdigit(c)) d=1; else s=1; }
-        if (u) cs+=26; if (l) cs+=26; if (d) cs+=10; if (s) cs+=32;
+        if (u) cs+=26;
+        if (l) cs+=26;
+        if (d) cs+=10;
+        if (s) cs+=32;
         return cs > 0 ? p.length() * log2(cs) : 0;
     }
 };
@@ -1832,7 +1755,8 @@ private:
         cout << GRAY << "  Length (default " << len << "): " << RESET;
         string lenStr; getLineTrim(lenStr);
         if (!lenStr.empty()) { try { len = stoi(lenStr); } catch (...) {} }
-        if (len < 4) len = 4; if (len > 128) len = 128;
+        if (len < 4) len = 4;
+        if (len > 128) len = 128;
         string pw = PasswordGenerator::generate(len);
         double ent = PasswordGenerator::entropy(pw);
         cout << GREEN << "\n  Generated: " << RESET << pw << endl;
@@ -2029,7 +1953,7 @@ public:
                     cout << GREEN << "\n  ✓ Encrypted: " << RESET << encryptedText << endl;
                     
                     // Log to blockchain
-                    string textHash = SHA256::hash(text);
+                    string textHash = AuditSHA256::hash(text);
                     logEncryption(blockchain, "TEXT_DATA", textHash, text.length(), encDuration * 1000, true);
                     
                     cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
@@ -2048,7 +1972,7 @@ public:
                     } else {
                         cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
                         // Log to blockchain
-                        string textHash = SHA256::hash(result);
+                        string textHash = AuditSHA256::hash(result);
                         logDecryption(blockchain, "TEXT_DATA", textHash, result.length(), decDuration * 1000, true);
                     }
                     
@@ -2101,6 +2025,16 @@ public:
 };
 // Program Entry Point
 int main(int argc, char* argv[]) {
+    const char* rpcUrl      = std::getenv("CRYPTVAULT_ETH_RPC");
+    const char* privKeyHex  = std::getenv("CRYPTVAULT_ETH_KEY");
+    const char* contractAddr = std::getenv("CRYPTVAULT_ETH_CONTRACT");
+
+    if (rpcUrl && privKeyHex && contractAddr) {
+        ethLogger = std::make_unique<EthLogger>(rpcUrl, privKeyHex, contractAddr);
+        std::cout << "[Ethereum] Audit logging active on " << contractAddr << "\n";
+    } else {
+        std::cout << "[Ethereum] Env vars not set - audit logging disabled\n";
+    }
     if (argc > 1) {
         string cmd = argv[1];
         
