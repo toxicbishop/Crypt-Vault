@@ -1,5 +1,15 @@
 # CryptVault — Secure File Sharing System with Encryption
 
+![C++](https://img.shields.io/badge/C%2B%2B-00599C?logo=c%2B%2B&logoColor=white)
+![x64 Assembly](https://img.shields.io/badge/Assembly-x64_ASM-red)
+![AES-256](https://img.shields.io/badge/AES--256-Secure-brightgreen)
+![PBKDF2 + HMAC](https://img.shields.io/badge/Crypto-PBKDF2_%2B_HMAC-orange)
+![Blockchain](https://img.shields.io/badge/Blockchain-Audit_Trail-blueviolet)
+![P2P Network](https://img.shields.io/badge/Network-P2P-informational)
+![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)
+![License: GPL v3](https://img.shields.io/badge/License-GPL--3.0-blue.svg)
+
 A hybrid **C++ + x64 Assembly** encryption tool with a **blockchain-backed tamper-proof audit trail** and **P2P multi-user network**. Built from scratch with zero external dependencies.
 
 > _"322 MB/s via AES-NI hardware acceleration. Blockchain audit log. Full CLI. No install."_
