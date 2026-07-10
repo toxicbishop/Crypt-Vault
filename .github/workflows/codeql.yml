@@ -57,7 +57,7 @@ jobs:
         # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     # Install build dependencies for Linux (CodeQL runs on ubuntu-latest)
     # -lws2_32 is Windows-only (Winsock), so we only need zlib here
