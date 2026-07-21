@@ -6,9 +6,9 @@
 #include <stdexcept>
 #include <sstream>
 #include <iomanip>
-#include "vendor/keccak/keccak.h"
-#include "vendor/secp256k1/include/secp256k1.h"
-#include "vendor/secp256k1/include/secp256k1_recovery.h"
+#include <keccak/keccak.h>
+#include <secp256k1.h>
+#include <secp256k1_recovery.h>
 
 // -- RLP encoding -------------------------------------------------------------
 static void rlpEncodeLength(std::vector<uint8_t>& out, size_t len, uint8_t offset) {
