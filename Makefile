@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -O2 -I include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00
+CXXFLAGS = -std=c++17 -O2 -I include -I src/vendor -I src/vendor/secp256k1/include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00
 LDFLAGS = -lws2_32 -lz -lssl -lcrypto
 
 SRC_DIR = src
