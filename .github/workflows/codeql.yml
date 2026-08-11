@@ -58,6 +58,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        submodules: recursive
 
     # Install build dependencies for Linux (CodeQL runs on ubuntu-latest)
     # -lws2_32 is Windows-only (Winsock), so we only need zlib here
