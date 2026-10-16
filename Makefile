@@ -1,15 +1,38 @@
-CXX = g++
-CXXFLAGS = -std=c++17 -O2 -I include -I src/vendor -I src/vendor/secp256k1/include -DJSON_HAS_CPP_14 -D_WIN32_WINNT=0x0A00
-LDFLAGS = -lws2_32 -lz -lssl -lcrypto
+CXX ?= g++
+CC ?= gcc
+
+CXXFLAGS = -std=c++17 -O2 \
+           -I include \
+           -I src/vendor \
+           -I src/vendor/secp256k1/include \
+           -DJSON_HAS_CPP_14 \
+           -D_WIN32_WINNT=0x0A00
+
+CFLAGS = -O2 \
+         -I include \
+         -I src \
+         -I src/vendor \
+         -I src/vendor/secp256k1 \
+         -I src/vendor/secp256k1/include \
+         -DENABLE_MODULE_RECOVERY=1 \
+         -DSECP256K1_STATIC=1
+
+CPPFLAGS =
+LDFLAGS =
+LDLIBS = -lz -lssl -lcrypto
+
+ifeq ($(OS),Windows_NT)
+LDLIBS += -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -lbcrypt
+endif
 
 SRC_DIR = src
-INC_DIR = include
 OBJ_DIR = .obj
 
-# Find all cpp files in src directory
 SRCS = $(wildcard $(SRC_DIR)/*.cpp)
-# Generate object file names
-OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(SRCS))
+C_SRCS = $(wildcard $(SRC_DIR)/*.c)
+
+OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRCS)) \
+       $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.c.o,$(C_SRCS))
 
 TARGET = crypt-vault.exe
 
@@ -18,15 +41,16 @@ TARGET = crypt-vault.exe
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
+	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
-# Rule to compile cpp to obj
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-# Create obj directory
+$(OBJ_DIR)/%.c.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
 $(OBJ_DIR):
-	mkdir -p $(OBJ_DIR)
+	mkdir -p $@
 
 clean:
 	-rm -rf $(OBJ_DIR)
