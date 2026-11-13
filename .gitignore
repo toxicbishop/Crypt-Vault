@@ -2,6 +2,12 @@
 *.exe
 *.o
 *.obj
+.obj/
+Build/*
+!Build/.gitkeep
+testbuild/
+crypt-vault
+crypt-vault.exe
 
 # System files
 .DS_Store
@@ -9,47 +15,38 @@
 *.swo
 *~
 
-# IDE files
+# IDE files and caches
 .vscode/
-.vscode
 .idea/
 *.code-workspace
-
-# Temporary files
-*.tmp
-*.log
-*.chain
-*.key
-*.enc
-test*.txt
-decrypted*.txt
-build_errors.txt
-peers.txt
-crypt-vault
-crypt-vault.exe
-
-*.enc
-*.exe
-.env
-.env.*
-*.pem
-*.crt
-*.p12
-*.pfx
-secrets.json
-decrypted.txt
-test.txt
-identity.key
-crypt_audit.chain
-peers.txt
-
-# IDE Logic and Cache
 .cache/
 .clangd
 compile_commands.json
 compile_flags.txt
 *.ps1
 gcc_v.txt
+
+# Keys, secrets, and environment
+.env
+.env.*
+*.pem
+*.crt
+*.p12
+*.pfx
+*.key
+identity.key
+secrets.json
+
+# Logs and temporary files
+*.tmp
+*.log
+*.chain
+crypt_audit.chain
+peers.txt
+build_errors.txt
+test*.txt
+decrypted*.txt
+*.enc
 
 # Python
 .venv/
