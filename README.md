@@ -87,29 +87,89 @@ A hybrid **C++ + x64 Assembly** encryption tool with a **blockchain-backed tampe
 
 ---
 
+## Prerequisites & Installation
+
+### 1. C++ Build Toolchain & Libraries
+Make sure you have a C++17 compatible compiler, `make`, OpenSSL, and zlib installed:
+- **Linux (Fedora/RHEL):**
+  ```bash
+  sudo dnf install gcc-c++ make openssl-devel zlib-ng-compat-devel
+  ```
+- **Linux (Ubuntu/Debian):**
+  ```bash
+  sudo apt update && sudo apt install build-essential libssl-dev zlib1g-dev
+  ```
+- **Windows (MSYS2 / MinGW-w64):**
+  ```bash
+  pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-openssl mingw-w64-x86_64-zlib
+  ```
+
+### 2. Python Environment (for Ethereum Anchoring)
+The project includes Ethereum anchoring scripts in `scripts/`. To install the Python dependencies in a virtual environment (`.venv`):
+
+```bash
+# Create a virtual environment
+python3 -m venv .venv
+
+# Activate the virtual environment
+source .venv/bin/activate       # On Linux/macOS
+# .venv\Scripts\activate        # On Windows
+
+# Install required dependencies
+pip install -r requirements.txt
+```
+
+---
+
 ## Build
 
-### Windows
+You can build the project using `make`:
 
 ```bash
-g++ -std=c++17 -O2 -o crypt-vault.exe \
-    Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lws2_32
+make
 ```
 
-### Linux
+To clean build artifacts:
 
 ```bash
-g++ -std=c++17 -O2 -o crypt-vault \
-    Crypt-Vault.cpp blockchain_audit.cpp p2p_node.cpp -lpthread
+make clean
 ```
+
+### Manual Compilation
+
+- **Windows (MinGW):**
+  ```bash
+  g++ -std=c++17 -O2 -I include -I src/vendor -I src/vendor/secp256k1/include \
+      src/*.cpp src/*.c -o crypt-vault.exe -lz -lssl -lcrypto -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -lbcrypt
+  ```
+- **Linux:**
+  ```bash
+  g++ -std=c++17 -O2 -I include -I src/vendor -I src/vendor/secp256k1/include \
+      src/*.cpp src/*.c -o crypt-vault -lz -lssl -lcrypto -lpthread
+  ```
+
+---
+
+## IDE & Path Configuration (VS Code)
+
+If you are developing using VS Code or an editor that utilizes `.vscode/c_cpp_properties.json`:
+
+> [!NOTE]
+> The `.vscode/` directory is ignored by Git (`.gitignore`) so your local environment configurations remain private to your machine.
+
+**Important: Update compiler and include paths to your system's setup!**
+Inside `.vscode/c_cpp_properties.json`, update the `compilerPath` and `includePath` according to your wish and system installation:
+- **Linux users:** Set `"compilerPath"` to your `g++` path (typically `/usr/bin/g++`) and select the `"Linux"` IntelliSense configuration.
+- **Windows users:** Set `"compilerPath"` to your MinGW/GCC binary path (e.g., `C:/msys64/mingw64/bin/g++.exe` or your custom toolchain path) and select the `"MinGW"` configuration.
+- If you use a custom toolchain or library installation path, update `"includePath"` and `"browse.path"` to include your custom directories.
 
 ### Platform Support
 
-| Platform | Status      | Notes                     |
-| -------- | ----------- | ------------------------- |
-| Windows  | ✅ Full     | Native winsock2           |
-| Linux    | ✅ Full     | POSIX sockets + pthreads  |
-| macOS    | ⚠️ Untested | Should work, not verified |
+| Platform | Status      | Notes                                |
+| -------- | ----------- | ------------------------------------ |
+| Windows  | ✅ Full     | Native winsock2                      |
+| Linux    | ✅ Full     | POSIX sockets + pthreads             |
+| macOS    | ⚠️ Untested | Should work, not verified            |
 
 ### Dependencies
 
