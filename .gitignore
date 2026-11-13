@@ -11,6 +11,7 @@
 
 # IDE files
 .vscode/
+.vscode
 .idea/
 *.code-workspace
 
@@ -24,6 +25,7 @@ test*.txt
 decrypted*.txt
 build_errors.txt
 peers.txt
+crypt-vault
 crypt-vault.exe
 
 *.enc
@@ -48,3 +50,10 @@ compile_commands.json
 compile_flags.txt
 *.ps1
 gcc_v.txt
+
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc

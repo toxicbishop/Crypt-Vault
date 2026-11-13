@@ -22,7 +22,11 @@ LDFLAGS =
 LDLIBS = -lz -lssl -lcrypto
 
 ifeq ($(OS),Windows_NT)
+TARGET ?= crypt-vault.exe
 LDLIBS += -lws2_32 -ladvapi32 -lcrypt32 -lgdi32 -lbcrypt
+else
+TARGET ?= crypt-vault
+LDLIBS += -lpthread
 endif
 
 SRC_DIR = src
@@ -33,8 +37,6 @@ C_SRCS = $(wildcard $(SRC_DIR)/*.c)
 
 OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRCS)) \
        $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.c.o,$(C_SRCS))
-
-TARGET = crypt-vault.exe
 
 .PHONY: all clean
 
@@ -54,5 +56,5 @@ $(OBJ_DIR):
 
 clean:
 	-rm -rf $(OBJ_DIR)
-	-rm -f $(TARGET)
+	-rm -f $(TARGET) crypt-vault crypt-vault.exe
 	-rm -f make_output.txt gcc_v.txt check.txt find_paths.ps1 get_gcc_paths.ps1
