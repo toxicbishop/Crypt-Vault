@@ -1247,8 +1247,9 @@ private:
     }
     void enableVirtualTerminal() {
         #ifdef _WIN32
-        // Enable UTF-8 console output
+        // Enable UTF-8 console output and input
         SetConsoleOutputCP(65001);
+        SetConsoleCP(65001);
         // Enable ANSI escape sequences
         HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD dwMode = 0;
@@ -1287,7 +1288,7 @@ private:
         const string RESET = "\033[0m";
         displayBanner();
         cout << GRAY << "  Type a " << CYAN << "number" << GRAY << " to select a command" << RESET << endl;
-        cout << GRAY << "  Press " << CYAN << "25" << GRAY << " to exit the application" << RESET << endl;
+        cout << GRAY << "  Press " << CYAN << "23" << GRAY << " to exit the application" << RESET << endl;
         cout << endl;
         cout << GREEN << "  →" << RESET << endl;
         cout << endl;
@@ -1324,7 +1325,7 @@ private:
         cout << CYAN << "  20" << GRAY << "  log        " << WHITE << "View encryption log" << RESET << endl;
         cout << CYAN << "  21" << GRAY << "  settings   " << WHITE << "Configuration settings" << RESET << endl;
         cout << CYAN << "  22" << GRAY << "  benchmark  " << WHITE << "Performance benchmarks" << RESET << endl;
-        cout << CYAN << "  25" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
+        cout << CYAN << "  23" << GRAY << "  exit       " << YELLOW << "Exit application" << RESET << endl;
         cout << endl;
         cout << GRAY << "  ─────────────────────────────────────────────────────────────" << RESET << endl;
         cout << endl;
@@ -1886,7 +1887,7 @@ public:
                 cout << RED << "\n  ✗ Invalid input! Press Enter to continue..." << RESET; cin.get(); continue;
             }
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            if (choice == 25) { 
+            if (choice == 23) { 
                 cout << CYAN << "\n  ✓ Thank you for using Crypt Vault. Goodbye!\n" << RESET << endl;
                 break; 
             }
@@ -1942,7 +1943,30 @@ public:
                 }
                 case 3: { // Encrypt text
                     cout << CYAN << "\n  ─── ENCRYPT TEXT ───\n" << RESET << endl;
-                    cout << GRAY << "  plaintext → " << RESET; getLineTrim(text);
+                    cout << GRAY << "  Input mode: [1] Single line  [2] Multi-line (type END on new line) → " << RESET;
+                    string modeChoice;
+                    getLineTrim(modeChoice);
+                    if (modeChoice == "2") {
+                        cout << GRAY << "\n  Enter / paste multi-line text below.\n"
+                             << "  When finished, type " << CYAN << "END" << GRAY << " on a new line and press Enter:\n"
+                             << "  ─────────────────────────────────────────────────────────────\n" << RESET;
+                        text.clear();
+                        string line;
+                        while (getline(cin, line)) {
+                            while (!line.empty() && line.back() == '\r') line.pop_back();
+                            if (line == "END") break;
+                            if (!text.empty()) text += "\n";
+                            text += line;
+                        }
+                    } else {
+                        cout << GRAY << "  plaintext → " << RESET;
+                        getline(cin, text);
+                        while (!text.empty() && text.back() == '\r') text.pop_back();
+                    }
+                    if (text.empty()) {
+                        cout << RED << "\n  ✗ Error: Plaintext cannot be empty." << RESET << endl;
+                        cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                    }
                     pw = getPasswordWithConfirmation();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
@@ -1950,7 +1974,7 @@ public:
                     string encryptedText = cipher.encryptText(text);
                     double encDuration = (double)(clock()-encStart)/CLOCKS_PER_SEC;
                     
-                    cout << GREEN << "\n  ✓ Encrypted: " << RESET << encryptedText << endl;
+                    cout << GREEN << "\n  ✓ Encrypted (Hex Ciphertext):\n  " << RESET << encryptedText << endl;
                     
                     // Log to blockchain
                     string textHash = AuditSHA256::hash(text);
@@ -1961,6 +1985,11 @@ public:
                 case 4: { // Decrypt text
                     cout << CYAN << "\n  ─── DECRYPT TEXT ───\n" << RESET << endl;
                     cout << GRAY << "  ciphertext (hex) → " << RESET; getLineTrim(text);
+                    text.erase(remove_if(text.begin(), text.end(), ::isspace), text.end());
+                    if (text.empty()) {
+                        cout << RED << "\n  ✗ Error: Ciphertext cannot be empty." << RESET << endl;
+                        cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                    }
                     pw = getPassword();
                     if (pw.empty()) break;
                     cipher.setKey(pw);
@@ -1970,7 +1999,7 @@ public:
                     if (result.empty()) {
                         cout << RED << "\n  ✗ Decryption failed (wrong password or invalid data)" << RESET << endl;
                     } else {
-                        cout << GREEN << "\n  ✓ Decrypted: " << RESET << result << endl;
+                        cout << GREEN << "\n  ✓ Decrypted Content:\n" << RESET << result << endl;
                         // Log to blockchain
                         string textHash = AuditSHA256::hash(result);
                         logDecryption(blockchain, "TEXT_DATA", textHash, result.length(), decDuration * 1000, true);
@@ -2011,12 +2040,12 @@ public:
                 case 20: encLog.display(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                 case 21: settingsMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
                                 case 22: runBenchmarks(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-                case 23: rsaGenerateKeysMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-                case 24: rsaWrapMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
-                case 25: rsaUnwrapMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 96: rsaGenerateKeysMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 97: rsaWrapMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
+                case 98: rsaUnwrapMenu(); cout << GRAY << "\n  Press Enter to continue..." << RESET; cin.get(); break;
 
                 default:
-                    cout << RED << "\n  ✗ Invalid choice! Please select 1-25." << RESET << endl;
+                    cout << RED << "\n  ✗ Invalid choice! Please select 1-23." << RESET << endl;
                     cout << GRAY << "  Press Enter to continue..." << RESET; cin.get();
             }
         }
@@ -2025,6 +2054,10 @@ public:
 };
 // Program Entry Point
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
+#endif
     const char* rpcUrl      = std::getenv("CRYPTVAULT_ETH_RPC");
     const char* privKeyHex  = std::getenv("CRYPTVAULT_ETH_KEY");
     const char* contractAddr = std::getenv("CRYPTVAULT_ETH_CONTRACT");
@@ -2042,6 +2075,8 @@ int main(int argc, char* argv[]) {
              cout << "CryptVault CLI Usage:\n"
                   << "  --encrypt <file> [-p <password>] [-o <output>]\n"
                   << "  --decrypt <file> [-p <password>] [-o <output>]\n"
+                  << "  --enc-text <text|- > [-p <password>]\n"
+                  << "  --dec-text <hex|- > [-p <password>]\n"
                   << "  --compress <file> [-p <password>] [-o <output>]\n"
                   << "  --preview <file> [-p <password>]\n"
                   << "  --encrypt-dir <dir> [-p <password>]\n"
@@ -2058,6 +2093,45 @@ int main(int argc, char* argv[]) {
         }
         
         AESCipher cipher;
+        
+        if (cmd == "--enc-text" || cmd == "--dec-text") {
+            if (argc < 3) {
+                cerr << "Error: Missing data. Usage: " << cmd << " <text|- > [-p <password>]" << endl;
+                return 1;
+            }
+            string data = argv[2], pw;
+            for (int i = 3; i < argc; i++) {
+                if (string(argv[i]) == "-p" && i + 1 < argc) pw = argv[++i];
+            }
+            if (data == "-") {
+                string line, all;
+                while (getline(cin, line)) {
+                    while (!line.empty() && line.back() == '\r') line.pop_back();
+                    if (!all.empty()) all += "\n";
+                    all += line;
+                }
+                data = all;
+            }
+            if (pw.empty()) {
+                cerr << "Password required (-p <password>)" << endl;
+                return 1;
+            }
+            cipher.setKey(pw);
+            if (cmd == "--enc-text") {
+                string encrypted = cipher.encryptText(data);
+                cout << encrypted << endl;
+                return 0;
+            } else {
+                data.erase(remove_if(data.begin(), data.end(), ::isspace), data.end());
+                string decrypted = cipher.decryptText(data);
+                if (decrypted.empty()) {
+                    cerr << "Decryption failed (wrong password or invalid data)" << endl;
+                    return 1;
+                }
+                cout << decrypted << endl;
+                return 0;
+            }
+        }
         
         if (cmd == "--genpass") {
             int len = (argc > 2) ? stoi(argv[2]) : 24;
