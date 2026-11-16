@@ -6,7 +6,8 @@ CXXFLAGS = -std=c++17 -O2 \
            -I src/vendor \
            -I src/vendor/secp256k1/include \
            -DJSON_HAS_CPP_14 \
-           -D_WIN32_WINNT=0x0A00
+           -D_WIN32_WINNT=0x0A00 \
+           -DSECP256K1_STATIC=1
 
 CFLAGS = -O2 \
          -I include \
