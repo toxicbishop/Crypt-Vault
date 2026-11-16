@@ -159,6 +159,10 @@ Block CryptVaultBlockchain::createGenesisBlock() {
 #define CALG_SHA_256 0x0000800c
 #endif
 
+#ifndef NTE_BAD_KEYSET
+#define NTE_BAD_KEYSET 0x80090016L
+#endif
+
 void CryptVaultBlockchain::initRSA() {
 #ifdef _WIN32
     if (!CryptAcquireContextA(&hProv, "CryptVaultKeyContainer", MS_ENHANCED_PROV_A, PROV_RSA_FULL, 0)) {
